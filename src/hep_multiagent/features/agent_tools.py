@@ -11,17 +11,22 @@ from . import validators as validate
 
 
 @tool
-def save_json(filepath: str, data: dict) -> str:
+def save_json(filepath: str, data) -> str:
     """Save data as JSON file for other workers to read.
 
     Args:
         filepath: Output path ending in .json, e.g. output_dir + "/results.json"
-        data: Dictionary or list to save
+        data: Dictionary, list, or JSON string to save
 
     Returns:
         Success message with filepath, or error if save failed.
     """
-    # Input validation
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError as e:
+            return f"Invalid JSON string: {e}"
+
     try:
         validate.non_empty(filepath, "filepath")
         validate.extension(filepath, [".json"])
