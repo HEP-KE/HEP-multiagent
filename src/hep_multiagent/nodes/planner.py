@@ -148,7 +148,7 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
         question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_docs)
         if logger:
             logger.log("Planner", "Consulting data sources...")
-        result = await CONSULTANTS["data"].consult(llm, [], question)
+        result = await CONSULTANTS["data"].consult(llm, tools, question)
         if logger:
             logger.log("Planner", f"Data consultation:\n{result[:500]}...")
         consultation_parts.append(f"## Available Data\n{result}")

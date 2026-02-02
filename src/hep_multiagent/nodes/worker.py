@@ -55,18 +55,24 @@ async def execute(
     attempt = {"output": output[:1000], "error": error, "tool_calls": result.get("tool_calls", [])}
     attempts = previous_attempts + [attempt]
 
-    status = "completed"
-    if error:
+    if solution:
+        status = "completed"
+        error = None
+    elif error:
         status = "ready" if len(attempts) < MAX_RETRIES else "failed"
         if logger and status == "ready":
             logger.log("Worker", f"Retrying (attempt {len(attempts)}/{MAX_RETRIES}): {error}")
+    else:
+        status = "failed"
+        error = "Worker did not produce a solution"
 
     new_steps = _update_steps(plan, step_id, status, output, solution, result.get("artifacts", []), error, attempts)
 
+    status_msg = "Completed" if status == "completed" else "Failed" if status == "failed" else "Retrying"
     return {
         "plan": {**plan, "steps": new_steps},
         "current_step_id": None,
-        "messages": [AIMessage(content=f"Completed: {step['name']}")],
+        "messages": [AIMessage(content=f"{status_msg}: {step['name']}")],
     }
 
 
