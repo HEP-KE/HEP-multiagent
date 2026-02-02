@@ -1,0 +1,48 @@
+{
+  "paper_info": {
+    "title": "Possible Couplings of Dark Matter",
+    "authors": "Kevin J. Ludwick",
+    "year": 2018,
+    "arxiv_id": "1809.09971"
+  },
+  "detection_methods": {
+    "gravitational_detection": {
+      "description": "Only confirmed detection method so far",
+      "examples": "Galaxy rotation curves, gravitational lensing"
+    },
+    "direct_detection": {
+      "description": "Experiments looking for direct interaction between dark matter and target material",
+      "status": "Have strongly constrained allowed cross sections due to non-observation",
+      "technique": "Laboratory-based detectors with target materials"
+    },
+    "indirect_detection": {
+      "description": "Detection through decay products",
+      "examples": [
+        "Neutrinos detected by IceCube experiment",
+        "Cosmic rays from supernovae studied by AMS-02 experiment"
+      ]
+    },
+    "radiation_signatures": {
+      "description": "3.5-keV radiation signature from certain galaxies",
+      "status": "Potential dark matter interaction signature"
+    }
+  },
+  "theoretical_framework": {
+    "luminogenesis_model": {
+      "description": "Beyond Standard Model theory connecting dark matter to inflaton",
+      "dark_matter_type": "CHIMPs (\u03c7 Massive Particles) - dark baryons from four \u03c7 particles",
+      "coupling_mechanism": "Non-minimal coupling through Ricci scalar",
+      "mass_constraints": "Upper bound of ~1 TeV for \u03c7 particles from astrophysical observations"
+    },
+    "self_interacting_dark_matter": {
+      "description": "Framework to solve small-scale structure problems",
+      "interaction": "Attractive Yukawa-type potential with scalar mediator",
+      "cross_section_constraints": "0.1-10 cm\u00b2/g depending on scale (dwarf, MW, cluster)"
+    }
+  },
+  "key_findings": {
+    "coupling_strength": "Dark matter-dark energy coupling is very small around present epoch",
+    "mass_limits": "CHIMP dark matter mass limited to ~4 TeV from astrophysical constraints",
+    "inflation_constraints": "Number of e-folds limited to <95 from dark matter mass bounds"
+  }
+}

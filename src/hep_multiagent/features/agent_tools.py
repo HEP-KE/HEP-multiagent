@@ -77,6 +77,37 @@ def list_data_keys(filepath: str) -> str:
         return f"Failed to read file: {e}"
 
 
+@tool
+def load_json(filepath: str, key: str = None) -> str:
+    """Load JSON file contents. Use to read data saved by other workers.
+
+    Args:
+        filepath: Path to .json file
+        key: Optional key to extract specific value from dict
+
+    Returns:
+        JSON content as string, or specific value if key provided.
+    """
+    try:
+        validate.file_exists(filepath)
+        validate.extension(filepath, [".json"])
+    except ValueError as e:
+        return str(e)
+
+    try:
+        with open(filepath) as f:
+            data = json.load(f)
+        if key:
+            if not isinstance(data, dict):
+                return f"Cannot extract key from non-dict: {type(data)}"
+            if key not in data:
+                return f"Key '{key}' not found. Available: {list(data.keys())}"
+            data = data[key]
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return f"Failed to load file: {e}"
+
+
 def _load_array(filepath: str):
     if filepath.endswith('.npy'):
         return np.load(filepath, allow_pickle=True)

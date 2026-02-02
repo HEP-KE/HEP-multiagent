@@ -4,12 +4,12 @@ import contextlib
 from langchain_core.tools import tool
 
 from ..features import validators as validate
-from ..features.agent_tools import save_json
+from ..features.agent_tools import load_json, save_json
 
 
 PROMPT = """You are a computational analysis specialist.
 
-TOOLS: execute_python, inspect_datafile, save_json
+TOOLS: load_json, execute_python, inspect_datafile, save_json
 
 IMPORTANT: Use save_json (NOT save_dict) to save data for other workers. save_json writes plain JSON that viz tools can read.
 
@@ -148,4 +148,4 @@ def inspect_datafile(file_path: str) -> str:
 
 
 def get_compute_tools():
-    return [execute_python, inspect_datafile, save_json]
+    return [load_json, execute_python, inspect_datafile, save_json]

@@ -1,0 +1,53 @@
+{
+  "year_counts": {
+    "2005": 1,
+    "2011": 1,
+    "2012": 1,
+    "2013": 1,
+    "2018": 1
+  },
+  "papers_by_year": {
+    "2005": [
+      {
+        "title": "The Dark Energy Survey",
+        "arxiv_id": "astro-ph/0510346",
+        "authors": "The Dark Energy Survey Collaboration"
+      }
+    ],
+    "2011": [
+      {
+        "title": "Directional detection of Dark Matter",
+        "arxiv_id": "1110.1056",
+        "authors": "F. Mayet, J. Billard, D. Santos"
+      }
+    ],
+    "2012": [
+      {
+        "title": "Direct dark matter detection: the next decade",
+        "arxiv_id": "1211.7222",
+        "authors": "Laura Baudis"
+      }
+    ],
+    "2013": [
+      {
+        "title": "Dark Matter in the Coming Decade: Complementary Paths to Discovery and Beyond",
+        "arxiv_id": "1305.1605",
+        "authors": "Daniel Bauer, James Buckley, Matthew Cahill-Rowley, Randel Cotta, Alex Drlica-Wagner, Jonathan L. Feng, Stefan Funk, JoAnne Hewett, Dan Hooper, Ahmed Ismail, Manoj Kaplinghat, Alexander Kusenko, Konstantin Matchev, Daniel McKinsey, Tom Rizzo, William Shepherd, Tim M. P. Tait, Alexander M. Wijangco, Matthew Wood"
+      }
+    ],
+    "2018": [
+      {
+        "title": "Possible Couplings of Dark Matter",
+        "arxiv_id": "1809.09971",
+        "authors": "Kevin J. Ludwick"
+      }
+    ]
+  },
+  "total_papers": 5,
+  "year_range": "2005-2018",
+  "analysis_summary": {
+    "unique_years": 5,
+    "most_productive_year": "2005",
+    "papers_in_most_productive_year": 1
+  }
+}

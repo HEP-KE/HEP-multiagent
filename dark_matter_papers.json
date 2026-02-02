@@ -1,0 +1,41 @@
+{
+  "papers": [
+    {
+      "arxiv_id": "1809.09971",
+      "title": "Possible Couplings of Dark Matter",
+      "year": 2018,
+      "authors": "Kevin J. Ludwick"
+    },
+    {
+      "arxiv_id": "1305.1605",
+      "title": "Dark Matter in the Coming Decade: Complementary Paths to Discovery and Beyond",
+      "year": 2013,
+      "authors": "Daniel Bauer et al."
+    },
+    {
+      "arxiv_id": "1211.7222",
+      "title": "Direct dark matter detection: the next decade",
+      "year": 2012,
+      "authors": "Laura Baudis"
+    },
+    {
+      "arxiv_id": "1110.1056",
+      "title": "Directional detection of Dark Matter",
+      "year": 2011,
+      "authors": "F. Mayet, J. Billard, D. Santos"
+    },
+    {
+      "arxiv_id": "astro-ph/0510346",
+      "title": "The Dark Energy Survey",
+      "year": 2005,
+      "authors": "The Dark Energy Survey Collaboration"
+    }
+  ],
+  "year_distribution": {
+    "2005": 1,
+    "2011": 1,
+    "2012": 1,
+    "2013": 1,
+    "2018": 1
+  }
+}
