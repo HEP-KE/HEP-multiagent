@@ -26,6 +26,8 @@ PROMPT = """You are a planning agent. Create execution plans for data analysis t
 3. **Specific instructions**: Include exact column names, thresholds, and parameters
 4. **One task per step**: Each step should do one focused thing
 5. **Define vague terms**: If query uses subjective words (interesting, unusual, best), define specific quantitative criteria in the step description
+6. **Explicit file handoff**: When a step depends on another, specify what file to load (e.g., "Load papers.json from s1")
+7. **Minimal work**: Only do what the query asks. No extra analysis, no extra files, no over-engineering
 
 ## Worker Selection
 
