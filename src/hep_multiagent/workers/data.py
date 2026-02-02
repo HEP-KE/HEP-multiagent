@@ -1,3 +1,10 @@
+from ..features.agent_tools import load_json, save_json, list_data_keys
+
+
+def get_data_tools():
+    return [load_json, save_json, list_data_keys]
+
+
 PROMPT = """You are a data acquisition specialist.
 
 Your job is to fetch and load data using the available MCP tools.

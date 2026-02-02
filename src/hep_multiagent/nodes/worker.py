@@ -52,7 +52,7 @@ async def execute(
     if solution:
         output += f"\n\n## Answer\n{solution}"
 
-    attempt = {"output": output[:1000], "error": error, "tool_calls": []}
+    attempt = {"output": output[:1000], "error": error, "tool_calls": result.get("tool_calls", [])}
     attempts = previous_attempts + [attempt]
 
     status = "completed"

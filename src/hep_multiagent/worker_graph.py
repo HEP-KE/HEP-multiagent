@@ -15,6 +15,7 @@ class WorkerState(TypedDict, total=False):
     error: str
     outputs: Annotated[List[str], add]
     artifacts: List[str]
+    tool_calls: Annotated[List[str], add]
 
 
 def call_model(state: WorkerState, model) -> dict:
@@ -57,7 +58,14 @@ def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=No
                 loop = asyncio.get_event_loop()
             except RuntimeError:
                 loop = asyncio.new_event_loop()
-            result = normalize_tool_result(loop.run_until_complete(tool.ainvoke(args)))
+            try:
+                result = normalize_tool_result(loop.run_until_complete(tool.ainvoke(args)))
+            except Exception as e:
+                result = (
+                    f"ERROR: {type(e).__name__}: {e}\n\n"
+                    f"This operation failed. Analyze the error above, "
+                    f"fix the underlying issue, and retry with corrected parameters."
+                )
             break
 
     if logger:
@@ -70,6 +78,7 @@ def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=No
         "outputs": [f"[{name}]: {result[:500]}"],
         "tool_index": idx + 1,
         "artifacts": state.get("artifacts", []) + extract_artifacts(result, extensions),
+        "tool_calls": [name],
     }
 
 

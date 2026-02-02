@@ -9,7 +9,7 @@ SANDBOX_ALLOWED_IMPORTS = {
 DEFAULT_EXTENSIONS = [".hdf5", ".h5", ".fits", ".csv", ".png", ".pdf", ".jpg", ".txt"]
 DEFAULT_OUTPUT_DIR = "./output"
 
-from .workers.data import PROMPT as DATA_WORKER
+from .workers.data import PROMPT as DATA_WORKER, get_data_tools
 from .workers.compute import PROMPT as COMPUTE_WORKER, get_compute_tools
 from .workers.research import PROMPT as RESEARCH_WORKER, get_research_tools
 from .workers.viz import PROMPT as VIZ_WORKER, get_viz_tools
@@ -22,6 +22,7 @@ WORKERS = {
 }
 
 WORKER_TOOLS = {
+    "data": get_data_tools,
     "compute": get_compute_tools,
     "research": get_research_tools,
     "viz": get_viz_tools,
