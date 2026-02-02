@@ -81,7 +81,7 @@ def build_graph(
     async def planner_node(s):
         if logger:
             logger.log("Planner", "Creating execution plan...")
-        result = await planner.plan(s, llm, tools, get_worker_docs())
+        result = await planner.plan(s, llm, tools, get_worker_docs(), logger)
         if logger:
             plan = result.get("plan")
             if plan:

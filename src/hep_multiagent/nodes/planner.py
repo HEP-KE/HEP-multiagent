@@ -107,7 +107,7 @@ def extract_json(text: str) -> Optional[str]:
         return None
 
 
-async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str) -> dict:
+async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logger=None) -> dict:
     tool_docs = "\n".join(f"- {t.name}: {t.description}" for t in tools)
 
     query = ""
@@ -123,11 +123,19 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str) -> di
     files = extract_file_paths(query)
 
     if vague:
+        if logger:
+            logger.log("Planner", f"Detected vague terms: {vague}. Consulting arxiv...")
         result = await CONSULTANTS["arxiv"].consult(llm, get_research_tools(), query)
+        if logger:
+            logger.log("Planner", f"Arxiv consultation:\n{result[:500]}...")
         consultation_parts.append(f"## Research\n{result}")
 
     for path in files:
+        if logger:
+            logger.log("Planner", f"Consulting file structure: {path}")
         result = await CONSULTANTS["file"].consult(llm, tools, f"Describe columns and structure of {path}")
+        if logger:
+            logger.log("Planner", f"File consultation:\n{result[:500]}...")
         consultation_parts.append(f"## File: {path}\n{result}")
 
     if not files and tools:
@@ -138,7 +146,11 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str) -> di
             param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
             tool_docs.append(f"- {t.name}({param_str}): {t.description}")
         question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_docs)
+        if logger:
+            logger.log("Planner", "Consulting data sources...")
         result = await CONSULTANTS["data"].consult(llm, [], question)
+        if logger:
+            logger.log("Planner", f"Data consultation:\n{result[:500]}...")
         consultation_parts.append(f"## Available Data\n{result}")
 
     consultation_context = "\n\n".join(consultation_parts)
@@ -157,7 +169,11 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str) -> di
         context=context,
     )
 
+    if logger:
+        logger.log("Planner", "Generating plan from LLM...")
     response = await llm.ainvoke([SystemMessage(content=prompt), HumanMessage(content=query)])
+    if logger and response.content:
+        logger.log("Planner", f"LLM response:\n{response.content[:800]}...")
 
     json_str = extract_json(response.content)
     if not json_str:
