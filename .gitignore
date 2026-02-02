@@ -1,0 +1,7 @@
+.venv/
+.pytest_cache/
+__pycache__/
+# output_*/
+.ipynb_checkpoints/
+checkpoint.db
+TODO.md

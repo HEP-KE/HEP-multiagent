@@ -1,0 +1,61 @@
+{
+  "search_query": "dark matter detection methods techniques",
+  "total_papers": 5,
+  "papers": [
+    {
+      "arxiv_id": "astro-ph/0510346",
+      "title": "The Dark Energy Survey",
+      "authors": "The Dark Energy Survey Collaboration",
+      "year": 2005,
+      "detection_focus": "Indirect detection through cosmological surveys and weak lensing",
+      "abstract_excerpt": "The survey data will allow us to measure the dark energy and dark matter densities through four independent methods: galaxy clusters, weak gravitational lensing tomography, galaxy angular clustering, and supernova distances."
+    },
+    {
+      "arxiv_id": "1211.7222",
+      "title": "Direct dark matter detection: the next decade",
+      "authors": "Laura Baudis",
+      "year": 2012,
+      "detection_focus": "Direct detection techniques and future WIMP detectors",
+      "abstract_excerpt": "Direct dark matter searches are promising techniques to identify the nature of dark matter particles. Ultimate WIMP detectors capable of probing spin-independent interactions down to 1e-48 cm2 cross section."
+    },
+    {
+      "arxiv_id": "1809.09971",
+      "title": "Possible Couplings of Dark Matter",
+      "authors": "Kevin J. Ludwick",
+      "year": 2018,
+      "detection_focus": "Theoretical coupling mechanisms and detection implications",
+      "abstract_excerpt": "Dark matter interacts gravitationally, but it presumably interacts weakly through other channels. Examines different ways dark matter may couple to other fields."
+    },
+    {
+      "arxiv_id": "1305.1605",
+      "title": "Dark Matter in the Coming Decade: Complementary Paths to Discovery and Beyond",
+      "authors": "Daniel Bauer, James Buckley, Matthew Cahill-Rowley, Randel Cotta, Alex Drlica-Wagner, Jonathan L. Feng, Stefan Funk, JoAnne Hewett, Dan Hooper, Ahmed Ismail, Manoj Kaplinghat, Alexander Kusenko, Konstantin Matchev, Daniel McKinsey, Tom Rizzo, William Shepherd, Tim M. P. Tait, Alexander M. Wijangco, Matthew Wood",
+      "year": 2013,
+      "detection_focus": "Comprehensive review of all detection approaches: direct, indirect, collider, and astrophysical",
+      "abstract_excerpt": "Four complementary approaches: direct detection, indirect detection, collider experiments, and astrophysical probes. The diversity of possible dark matter candidates requires a balanced program."
+    },
+    {
+      "arxiv_id": "1110.1056",
+      "title": "Directional detection of Dark Matter",
+      "authors": "F. Mayet, J. Billard, D. Santos",
+      "year": 2011,
+      "detection_focus": "Directional detection using 3D track measurement",
+      "abstract_excerpt": "Directional detection takes advantage of the Solar system rotation through the Dark Matter halo. Requires simultaneous measurement of energy and 3D track of low energy recoils."
+    }
+  ],
+  "publication_year_distribution": {
+    "2005": 1,
+    "2011": 1,
+    "2012": 1,
+    "2013": 1,
+    "2018": 1
+  },
+  "detection_methods_covered": [
+    "Direct detection",
+    "Indirect detection (cosmological surveys)",
+    "Directional detection",
+    "Collider experiments",
+    "Astrophysical probes",
+    "Theoretical coupling analysis"
+  ]
+}
