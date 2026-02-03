@@ -155,10 +155,17 @@ def create_bar_chart(data_file: str, output_path: str, title: str = "Bar Chart",
             data = json.load(f)
         if "year_counts" in data:
             labels, values = list(data["year_counts"].keys()), list(data["year_counts"].values())
-        elif "labels" in data:
+        elif "labels" in data and "values" in data:
             labels, values = data["labels"], data["values"]
         else:
-            labels, values = list(data.keys()), list(data.values())
+            # Filter to only numeric values (skip nested dicts, lists, strings)
+            labels, values = [], []
+            for k, v in data.items():
+                if isinstance(v, (int, float)):
+                    labels.append(k)
+                    values.append(v)
+            if not labels:
+                return f"No numeric values found. Keys: {list(data.keys())}. Use {{labels: [], values: []}} format."
 
         plt.figure(figsize=(10, 6))
         plt.bar(labels, values, edgecolor='black', alpha=0.7)

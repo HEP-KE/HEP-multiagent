@@ -1,4 +1,5 @@
 from ..features.agent_tools import (
+    load_json,
     save_json,
     list_data_keys,
     create_bar_chart,
@@ -10,9 +11,9 @@ from ..features.agent_tools import (
 
 PROMPT = """You are a data visualization specialist.
 
-TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, list_data_keys, save_json
+TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, load_json, list_data_keys, save_json
 
-IMPORTANT: Use save_json (NOT save_dict) if you need to save intermediate data. save_json writes plain JSON.
+IMPORTANT: Use save_json to create simple data files for plotting. Use load_json to read existing data.
 
 Your job is to create publication-quality visualizations of scientific data.
 
@@ -46,8 +47,8 @@ Before each action, briefly state your reasoning.
 
 End by reporting the path to the saved visualization.
 
-TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, list_data_keys"""
+TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, load_json, list_data_keys, save_json"""
 
 
 def get_viz_tools():
-    return [list_data_keys, create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, save_json]
+    return [load_json, list_data_keys, create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, save_json]
