@@ -4,6 +4,13 @@ from typing import List, Any
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 
+def format_attempts(attempts: List[dict]) -> str:
+    if not attempts:
+        return ""
+    parts = [f"## Attempt {i}\n{a.get('output', '')}\n{a.get('error', '')}" for i, a in enumerate(attempts, 1)]
+    return "# Previous Attempts\n" + "\n".join(parts) + "\n\nAnalyze what went wrong and try a different approach."
+
+
 def extract_artifacts(text: str, extensions: List[str]) -> List[str]:
     artifacts = []
     for ext in extensions:
@@ -51,13 +58,7 @@ def build_worker_prompt(
     if context:
         parts.append(f"# Prior Results\n{context}")
     if previous_attempts:
-        attempt_lines = ["# Previous Attempts"]
-        for i, att in enumerate(previous_attempts, 1):
-            attempt_lines.append(f"Attempt {i}: " +
-                (f"Error: {att['error']}" if att.get("error") else "") +
-                (f"Tools: {', '.join(att['tool_calls'])}" if att.get("tool_calls") else ""))
-        attempt_lines.append("Try a different approach.")
-        parts.append("\n".join(attempt_lines))
+        parts.append(format_attempts(previous_attempts))
     parts.append("# Instructions\nUse tools to complete this task. If you reference papers, you MUST cite them using cite(). Provide a clear answer when done.")
     return "\n\n".join(parts)
 
