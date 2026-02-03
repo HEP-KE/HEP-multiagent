@@ -13,10 +13,8 @@ PROMPT = """You are a data visualization specialist.
 
 TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, load_json, list_data_keys, save_json, load_array, load_dict
 
-LOADING DATA:
-- load_array(filename): Load .npy files saved by compute worker
-- load_dict(filename): Load dicts with numpy arrays (reads metadata + .npy files)
-- load_json(filepath): Load plain JSON files
+MCP TOOLS (load_array, load_dict, plot_*): Pass LITERAL values, not variable names.
+load_json works with filepaths directly.
 
 Your job is to create publication-quality visualizations of scientific data.
 
