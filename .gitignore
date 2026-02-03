@@ -6,6 +6,6 @@ __pycache__/
 .ipynb_checkpoints/
 TODO.md
 /data
-/test/data/
+/tests/data/
 checkpoint*
-/test/output*
+/tests/output*

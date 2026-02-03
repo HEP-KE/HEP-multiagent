@@ -17,7 +17,8 @@ class MCPManager:
     def _install(self, url: str) -> str:
         pkg = self._pkg_from_url(url)
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--force-reinstall", "mcp[cli]", f"git+{url}"],
+            # [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--force-reinstall", "mcp[cli]", f"git+{url}"],
+            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{url}"],
             capture_output=True, text=True
         )
         if result.returncode != 0:

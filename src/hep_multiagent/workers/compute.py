@@ -9,9 +9,14 @@ from ..features.agent_tools import load_json, save_json
 
 PROMPT = """You are a computational analysis specialist.
 
-TOOLS: load_json, execute_python, inspect_datafile, save_json
+TOOLS: load_json, execute_python, inspect_datafile, save_json, save_array, save_dict, load_array, load_dict
 
-IMPORTANT: Use save_json (NOT save_dict) to save data for other workers. save_json writes plain JSON that viz tools can read.
+SAVING DATA:
+- save_array(array, filename): Save numpy arrays as .npy files
+- save_dict(data, filename): Save dicts with numpy arrays (arrays → .npy, primitives → .json)
+- save_json(filepath, data): Save plain JSON (data must be a dict/list, NOT a variable name)
+
+IMPORTANT: Variables persist between execute_python calls. Define once, reuse later.
 
 Your job is to perform data analysis and computations using available tools.
 
@@ -75,7 +80,15 @@ def _check_imports(code: str) -> str | None:
 
 
 class _Sandbox:
-    def __init__(self):
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._init_globals()
+        return cls._instance
+
+    def _init_globals(self):
         self.globals = {'__builtins__': __builtins__}
         try:
             import numpy as np
