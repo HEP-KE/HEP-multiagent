@@ -19,6 +19,7 @@ async def execute(
     default_output_dir: str,
     logger: Any = None,
     notebook: Any = None,
+    lessons: str = "",
 ) -> dict:
     plan = state.get("plan")
     step_id = state.get("current_step_id")
@@ -36,7 +37,7 @@ async def execute(
         worker_tools.extend(WORKER_TOOLS[step["worker_type"]]())
 
     prompt = workers.get(step["worker_type"], workers["data"])
-    task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts, research_context)
+    task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts, research_context, lessons)
 
     graph = worker_graph.build(llm, worker_tools, artifact_extensions, logger, notebook, step["worker_type"])
 

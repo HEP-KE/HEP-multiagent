@@ -6,6 +6,7 @@ from langgraph.types import RetryPolicy
 from .state import AgentState
 from .config import WORKERS, get_worker_docs
 from .nodes import planner, synthesis, supervisor, router, worker
+from .features.lesson_memory import LessonMemory, recall, learn, get_lessons, save_lesson_on_failure
 
 
 LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=1.0, backoff_factor=2.0, jitter=True)
@@ -65,16 +66,20 @@ def build_graph(
     get_output_dir: Callable[[], str],
     logger: Any = None,
     notebook: Any = None,
+    lesson_memory: LessonMemory = None,
 ):
     async def worker_node(s):
         plan = s.get("plan")
         step_id = s.get("current_step_id")
         step = next((st for st in plan["steps"] if st["id"] == step_id), None) if plan and step_id else None
+        worker_type = step["worker_type"] if step else None
         if logger and step:
             logger.log("Worker", f"Executing: **{step['name']}**\n\n> {step['description'][:300]}")
-        result = await worker.execute(s, llm, tools, WORKERS, artifact_extensions, get_output_dir(), logger, notebook)
+        lessons = await recall(lesson_memory, worker_type)
+        result = await worker.execute(s, llm, tools, WORKERS, artifact_extensions, get_output_dir(), logger, notebook, lessons)
+        updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
+        await learn(lesson_memory, worker_type, updated_step.get("status"), updated_step.get("error"))
         if logger and step:
-            updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
             _log_worker_result(logger, step, updated_step)
         return result
 

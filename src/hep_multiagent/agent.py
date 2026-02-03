@@ -9,6 +9,7 @@ from .config import (
     ACADEMIC_REPORT, DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
     REPORTS, REFERENCES, SQLiteCheckpoint, APPROVAL, ExecutionNotebook,
 )
+from .features.lesson_memory import LessonMemory
 from .graph import build_graph
 from .features.agent_trace import MarkdownLogger
 from .mcp import MCPManager
@@ -33,6 +34,7 @@ class Agent:
         self.output_dir = None
         self.logger = MarkdownLogger()
         self.notebook = ExecutionNotebook()
+        self.lesson_memory = None
         self._mcp = MCPManager()
         self._graph = None
 
@@ -69,6 +71,8 @@ class Agent:
         if self.checkpoint is None:
             db_path = os.path.join(os.getcwd(), "checkpoint.db")
             self.checkpoint = SQLiteCheckpoint(db_path)
+            self.lesson_memory = LessonMemory(db_path)
+            await self.lesson_memory.init()
 
         if self.mcp_servers:
             self.logger.log("MCP", "Loading MCP servers...")
@@ -111,6 +115,7 @@ class Agent:
                     get_output_dir=lambda: self.output_dir,
                     logger=self.logger,
                     notebook=self.notebook,
+                    lesson_memory=self.lesson_memory,
                 )
 
                 if initial:
