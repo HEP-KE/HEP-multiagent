@@ -40,6 +40,7 @@ Do NOT include raw data dumps.
 Include helpful tables. For wide tables, wrap with: \fitbox{{\begin{{tabular}}{{...}}...\end{{tabular}}}}
 
 \section{{Discussion}}
+\textbf{{Physical Plausibility:}} Validate results against known physics. Flag any values that seem unphysical (e.g., P(k)=0 at k>0.1 h/Mpc is wrong, negative masses, ratios >10x expected).
 Key takeaways - be opinionated based on evidence.
 Limitations: what the system could not do or verify.
 Gaps: what information is missing or uncertain.
@@ -133,11 +134,40 @@ def _read_bib_keys(output_dir: str) -> str:
     return "USE ONLY THESE CITATIONS (do not invent others):\n" + "\n".join(entries)
 
 
+def get_step_status(step: dict) -> tuple[str, str]:
+    """Return (icon, label) for a step's status."""
+    status = step.get("status", "pending")
+    if status == "completed":
+        return ("✓", "COMPLETED")
+    elif status == "failed":
+        return ("✗", "FAILED")
+    return ("⏭", "SKIPPED")
+
+
+def count_step_statuses(steps: list[dict]) -> dict[str, int]:
+    """Count steps by status category."""
+    counts = {"completed": 0, "failed": 0, "skipped": 0}
+    for step in steps:
+        icon, _ = get_step_status(step)
+        if icon == "✓":
+            counts["completed"] += 1
+        elif icon == "✗":
+            counts["failed"] += 1
+        else:
+            counts["skipped"] += 1
+    return counts
+
+
 def _build_execution_summary(plan: Plan) -> str:
-    lines = [f"Goal: {plan['goal']}\n"]
-    for step in plan.get("steps", []):
-        status = "✓" if step["status"] == "completed" else "✗"
-        lines.append(f"### {status} {step['name']} [{step['worker_type']}]")
+    steps = plan.get("steps", [])
+    counts = count_step_statuses(steps)
+    lines = [
+        f"Goal: {plan['goal']}",
+        f"\n## Status: {counts['completed']} completed, {counts['failed']} failed, {counts['skipped']} skipped\n",
+    ]
+    for step in steps:
+        icon, label = get_step_status(step)
+        lines.append(f"### {icon} {label}: {step['name']} [{step['worker_type']}]")
         lines.append(f"Task: {step['description']}")
         if step.get("solution"):
             lines.append(f"Result: {step['solution'][:500]}")

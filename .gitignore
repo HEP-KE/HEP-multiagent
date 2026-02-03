@@ -9,3 +9,5 @@ TODO.md
 /tests/data/
 checkpoint*
 /tests/output*
+.DS_Store
+tests/.DS_Store
