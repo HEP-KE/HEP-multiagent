@@ -47,7 +47,9 @@ If an operation fails:
 
 Before each action, briefly state your reasoning.
 
-End with a clear summary of the analysis results, or FAILED if required data was missing."""
+REQUIRED: End your response with exactly one of:
+- SUCCESS: <summary of computation results>
+- FAILED: <reason why computation could not be completed>"""
 
 
 from ..config import SANDBOX_ALLOWED_IMPORTS

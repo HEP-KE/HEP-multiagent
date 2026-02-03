@@ -40,10 +40,9 @@ If cite() returns QUOTE FAILED:
 
 Before each action, briefly state your reasoning.
 
-Provide summary with:
-- Specific values, thresholds, criteria (with exact quotes)
-- Key equations or methods
-- Citations with verifiable quotes"""
+REQUIRED: End your response with exactly one of:
+- SUCCESS: <summary with specific values, thresholds, citations>
+- FAILED: <reason why research could not be completed>"""
 
 
 @tool

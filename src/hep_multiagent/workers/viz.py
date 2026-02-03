@@ -52,7 +52,9 @@ If plot creation fails:
 
 Before each action, briefly state your reasoning.
 
-End by reporting the path to the saved visualization, or FAILED if data was missing."""
+REQUIRED: End your response with exactly one of:
+- SUCCESS: <path to saved visualization>
+- FAILED: <reason why visualization could not be created>"""
 
 
 def get_viz_tools():

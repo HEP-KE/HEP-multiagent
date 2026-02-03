@@ -34,4 +34,6 @@ If an operation fails:
 
 Before each action, briefly state your reasoning.
 
-End with a summary of what data was acquired and where it is located, or FAILED if unavailable."""
+REQUIRED: End your response with exactly one of:
+- SUCCESS: <summary of data acquired and file paths>
+- FAILED: <reason why data could not be acquired>"""

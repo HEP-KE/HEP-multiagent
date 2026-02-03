@@ -53,25 +53,30 @@ async def execute(
     if solution:
         output += f"\n\n## Answer\n{solution}"
 
-    # Detect if worker explicitly failed (data unavailable, etc.)
-    is_explicit_failure = solution and solution.strip().upper().startswith("FAILED:")
-    if is_explicit_failure:
-        error = solution.strip()
-        solution = ""
+    # Check for explicit outcome markers in solution
+    check_text = (solution[:500] if solution else "").upper()
+    has_success = any(m in check_text for m in ["SUCCESS:", "COMPLETED:", "SUCCESSFULLY"])
+    has_failure = "FAILED:" in check_text
 
     attempt = {"output": output[:1000], "error": error, "tool_calls": result.get("tool_calls", [])}
     attempts = previous_attempts + [attempt]
 
-    if solution and not is_explicit_failure:
+    if has_failure:
+        # Explicit failure - accept it
+        status = "failed"
+        error = solution.strip()
+        solution = ""
+    elif has_success:
+        # Explicit success - mark completed
         status = "completed"
         error = None
-    elif error:
+    elif solution:
+        # No explicit marker - retry for clarification
+        error = "Unclear outcome. State SUCCESS: or FAILED: explicitly."
         status = "ready" if len(attempts) < MAX_RETRIES else "failed"
-        if logger and status == "ready":
-            logger.log("Worker", f"Retrying (attempt {len(attempts)}/{MAX_RETRIES}): {error}")
     else:
         status = "failed"
-        error = "Worker did not produce a solution"
+        error = error or "No solution produced"
 
     new_steps = _update_steps(plan, step_id, status, output, solution, result.get("artifacts", []), error, attempts)
 
