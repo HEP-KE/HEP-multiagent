@@ -6,7 +6,7 @@ from langgraph.types import RetryPolicy
 from .state import AgentState
 from .config import WORKERS, get_worker_docs
 from .nodes import planner, synthesis, supervisor, router, worker
-from .features.lesson_memory import LessonMemory, recall, learn, get_lessons, save_lesson_on_failure
+from .features.lesson_memory import LessonMemory, recall, learn
 
 
 LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=1.0, backoff_factor=2.0, jitter=True)
