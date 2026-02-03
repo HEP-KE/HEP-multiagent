@@ -27,6 +27,12 @@ WORKFLOW:
 3. Perform the requested analysis
 4. Report results with specific values
 
+CRITICAL - DATA INTEGRITY:
+- If the task requires REAL data, you MUST use real data from files or prior step outputs
+- Only create mock/synthetic data if the task EXPLICITLY requests it
+- NEVER substitute mock data when real data was requested but unavailable
+- If required real data is unavailable, respond with "FAILED: <reason>"
+
 IMPORTANT:
 - Use exact column names from the data
 - Include print() statements to show intermediate results
@@ -37,10 +43,11 @@ If an operation fails:
 1. State what went wrong based on the error
 2. Check column names or data types
 3. Retry with corrected approach
+4. If data is unavailable after retries, respond with "FAILED: Required data not available"
 
 Before each action, briefly state your reasoning.
 
-End with a clear summary of the analysis results."""
+End with a clear summary of the analysis results, or FAILED if required data was missing."""
 
 
 from ..config import SANDBOX_ALLOWED_IMPORTS

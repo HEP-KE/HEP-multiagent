@@ -11,6 +11,34 @@ from . import validators as validate
 
 
 @tool
+def list_output_files(output_dir: str) -> str:
+    """List files in the output directory only. Use this to see what data is available.
+
+    Args:
+        output_dir: The output directory path (provided in task description)
+
+    Returns:
+        List of files in the output directory, or error if not found.
+    """
+    import os
+    try:
+        validate.dir_exists(output_dir)
+    except ValueError as e:
+        return str(e)
+
+    files = sorted(os.listdir(output_dir))
+    if not files:
+        return f"Output directory {output_dir} is empty - no data files available."
+
+    data_exts = {'.hdf5', '.h5', '.fits', '.csv', '.npy', '.npz', '.json', '.dat', '.txt'}
+    data_files = [f for f in files if os.path.splitext(f)[1].lower() in data_exts]
+
+    if data_files:
+        return f"Data files in output directory:\n" + "\n".join(f"  - {f}" for f in data_files)
+    return f"Files in output directory (no data files):\n" + "\n".join(f"  - {f}" for f in files)
+
+
+@tool
 def save_json(filepath: str, data) -> str:
     """Save data as JSON file for other workers to read.
 

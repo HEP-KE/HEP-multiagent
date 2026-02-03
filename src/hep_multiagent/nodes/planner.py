@@ -10,54 +10,82 @@ from ..config import CONSULTANTS
 from ..workers.research import get_research_tools
 
 
-PROMPT = """You are a planning agent. Create execution plans for data analysis tasks.
+PROMPT = """You are a planning agent for scientific data analysis.
+
+You MUST consult specialist agents to gather information BEFORE creating your plan.
+
+## Your Consultation Tools
+
+The system has already consulted specialists if context appears below. Use that information.
+
+## CRITICAL: How Consultation Works
+
+When consultation happens, you receive information NOW. You must EMBED that information directly into your plan descriptions.
+
+WRONG approach:
+- Consultation found papers about "interesting halos"
+- Create a plan step: "research_interest_criteria: Use research worker to find what makes halos interesting"
+- This is WRONG because the research is already done!
+
+CORRECT approach:
+- Consultation found: "Massive halos (M500c > 1e14), cool-core clusters (K0 < 30 keV cm²)"
+- Create a plan step: "filter_interesting: Filter halos where sod_halo_M500c > 1e14 OR sod_halo_core_entropy < 30"
+- The specific criteria from consultation are embedded in the step description
+
+## Your Process
+
+1. IDENTIFY what's known from consultation context above
+2. EMBED specific values, thresholds, column names into step descriptions
+3. Do NOT create research steps to re-research what's already in context
+4. ONLY create research steps if papers need CITATIONS in the final report
+
+{context}
 
 ## Available Workers
+
 {worker_docs}
 
 {tool_docs}
 
-{context}
-
-## Planning Guidelines
-
-1. **Data first**: If data needs to be fetched, that step comes first
-2. **Dependencies**: Use depends_on to specify step execution order
-3. **Specific instructions**: Include exact column names, thresholds, and parameters
-4. **One task per step**: Each step should do one focused thing
-5. **Explicit file handoff**: When a step depends on another, specify what file to load (e.g., "Load papers.json from s1")
-6. **Minimal work**: Only do what the query asks. No extra analysis, no extra files, no over-engineering
-
-## Worker Selection
-
 - **data**: Fetch remote data via MCP tools
-- **compute**: Load files, filter, transform, compute statistics
-- **research**: Search literature ONLY when no research context is provided above
+- **compute**: Load files, filter, transform, compute statistics, save results
+- **research**: Search arxiv AND cite papers. Use ONLY when papers must appear with citations in the final report.
 - **viz**: Create plots and visualizations
 
 {research_instruction}
 
 ## Output Format
 
-Output ONLY valid JSON:
 ```json
 {{
-    "goal": "clear summary including specific criteria determined",
+    "goal": "summary including the specific criteria you determined from consultation",
     "steps": [
         {{
             "id": "s1",
-            "name": "descriptive_step_name",
+            "name": "step_name",
             "worker_type": "data|compute|research|viz",
-            "description": "Detailed instructions with specific parameters",
+            "description": "Detailed instructions with SPECIFIC values from consultation",
             "depends_on": []
-        }},
-        {{
-            "id": "s2",
-            "name": "next_step",
-            "worker_type": "compute",
-            "description": "Use results from s1 to...",
-            "depends_on": ["s1"]
         }}
+    ]
+}}
+```
+
+## Example
+
+Query: "Find interesting halos in data.hdf5"
+
+Consultation found:
+- Columns: sod_halo_mass, sod_halo_cdelta, sod_halo_core_entropy, fof_halo_tag...
+- Interesting criteria: Massive (M > 1e14), Cool-core (entropy < 30), Concentration outliers (cdelta > 2σ)
+
+Plan (NO research steps - consultation already done):
+```json
+{{
+    "goal": "Find interesting halos using criteria: mass>1e14, entropy<30, concentration outliers",
+    "steps": [
+        {{"id": "s1", "name": "load_data", "worker_type": "compute", "description": "Load data.hdf5", "depends_on": []}},
+        {{"id": "s2", "name": "filter_interesting", "worker_type": "compute", "description": "Filter where sod_halo_mass > 1e14 OR sod_halo_core_entropy < 30 OR abs(sod_halo_cdelta - mean) > 2*std", "depends_on": ["s1"]}}
     ]
 }}
 ```
@@ -78,6 +106,26 @@ def detect_vague_terms(query: str) -> List[str]:
 def extract_file_paths(query: str) -> List[str]:
     pattern = r'["\']?([^\s"\']+\.(?:hdf5|h5|fits|csv|txt|dat|npy|npz|json|yaml|yml))["\']?'
     return list(dict.fromkeys(re.findall(pattern, query, re.IGNORECASE)))
+
+
+def _check_output_dir_files(output_dir: str) -> bool:
+    import os
+    if not os.path.exists(output_dir):
+        return False
+    data_exts = {'.hdf5', '.h5', '.fits', '.csv', '.npy', '.npz', '.json', '.dat'}
+    for f in os.listdir(output_dir):
+        if os.path.splitext(f)[1].lower() in data_exts:
+            return True
+    return False
+
+
+def _is_research_only_query(query: str) -> bool:
+    q = query.lower()
+    research_terms = ['arxiv', 'paper', 'literature', 'publication', 'cite', 'research']
+    data_terms = ['load', 'fetch', 'data', 'catalog', 'halo', 'galaxy', 'simulation', 'plot', 'chart', 'histogram', 'compute', 'calculate', 'analyze', 'filter']
+    has_research = any(t in q for t in research_terms)
+    has_data = any(t in q for t in data_terms)
+    return has_research and not has_data
 
 
 def extract_json(text: str) -> Optional[str]:
@@ -110,12 +158,24 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
             query = msg.content
             break
 
+    # Check if query needs data and if we have resources
+    files = extract_file_paths(query)
+    output_dir = state.get("output_dir", ".")
+    has_mcp_tools = len(tools) > 0
+    has_local_files = files or _check_output_dir_files(output_dir)
+    is_research_only = _is_research_only_query(query)
+
+    if not is_research_only and not has_mcp_tools and not has_local_files:
+        msg = "Cannot fulfill this query: No data files in output directory and no MCP tools available to fetch data."
+        if logger:
+            logger.log("Planner", msg)
+        return {"plan": None, "error": msg}
+
     context_parts = []
     consultation_parts = []
     arxiv_consulted = False
 
     vague = detect_vague_terms(query)
-    files = extract_file_paths(query)
 
     if vague:
         if logger:
@@ -160,10 +220,34 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
     context = "\n".join(context_parts) if context_parts else ""
 
     research_instruction = ""
+    needs_citations = any(term in query.lower() for term in ["cite", "paper", "reference", "literature", "arxiv", "publication"])
     if arxiv_consulted:
-        research_instruction = """## CRITICAL: Research Already Done
-The arxiv research above is COMPLETE. Do NOT create any research worker steps.
-Use the research results directly in compute/viz steps. The papers, methods, and findings are already available above."""
+        if needs_citations:
+            research_instruction = """## MANDATORY: Research Worker Required
+
+The query mentions papers/arxiv. You MUST include a research worker step.
+
+The consultation above found papers but they are NOT YET CITED. The research worker MUST:
+1. Search for the papers mentioned above using search_arxiv_abstracts
+2. Call cite() for each paper to add them to references.bib
+3. This ensures proper citations [arXiv:XXXX.XXXXX] appear in the final report
+
+REQUIRED STEP (add this to your plan):
+{
+    "id": "sN",
+    "name": "cite_papers",
+    "worker_type": "research",
+    "description": "Search arxiv for the papers found during consultation and cite them using cite() to build references.bib. Papers to cite: [list arXiv IDs from consultation above]",
+    "depends_on": []
+}
+
+Then embed the scientific CRITERIA from consultation into compute/viz step descriptions."""
+        else:
+            research_instruction = """## Research Context Available
+The consultation above found criteria for your query.
+- Do NOT create research worker steps (no citations needed for this query)
+- EMBED the specific values and thresholds directly into compute/viz step descriptions
+- Example: Instead of "find interesting halos", write "filter where mass > 1e14 OR entropy < 30" """
 
     prompt = PROMPT.format(
         worker_docs=worker_docs,

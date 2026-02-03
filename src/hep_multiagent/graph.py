@@ -34,7 +34,7 @@ def _supervisor_reason(state, plan, action):
 def _log_worker_result(logger, step, updated_step):
     status = updated_step.get("status", "unknown")
     artifacts = updated_step.get("artifacts", [])
-    solution = updated_step.get("solution", "")[:300]
+    solution = (updated_step.get("solution") or "")[:300]
     error = updated_step.get("error")
     lines = [f"Finished: **{step['name']}** ({status})"]
     if artifacts:

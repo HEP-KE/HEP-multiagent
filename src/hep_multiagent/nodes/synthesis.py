@@ -135,10 +135,6 @@ def _read_bib_keys(output_dir: str) -> str:
 
 def _build_execution_summary(plan: Plan) -> str:
     lines = [f"Goal: {plan['goal']}\n"]
-    if plan.get("research_context"):
-        lines.append("## Research Context (from planner consultation)")
-        lines.append(plan["research_context"])
-        lines.append("")
     for step in plan.get("steps", []):
         status = "✓" if step["status"] == "completed" else "✗"
         lines.append(f"### {status} {step['name']} [{step['worker_type']}]")

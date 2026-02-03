@@ -53,10 +53,16 @@ async def execute(
     if solution:
         output += f"\n\n## Answer\n{solution}"
 
+    # Detect if worker explicitly failed (data unavailable, etc.)
+    is_explicit_failure = solution and solution.strip().upper().startswith("FAILED:")
+    if is_explicit_failure:
+        error = solution.strip()
+        solution = ""
+
     attempt = {"output": output[:1000], "error": error, "tool_calls": result.get("tool_calls", [])}
     attempts = previous_attempts + [attempt]
 
-    if solution:
+    if solution and not is_explicit_failure:
         status = "completed"
         error = None
     elif error:

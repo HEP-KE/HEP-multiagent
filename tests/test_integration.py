@@ -422,6 +422,22 @@ def test_step_dependency_resolution():
     assert isinstance(ready, list)
 
 
+def test_explicit_failure_detection():
+    # Test that solutions starting with "FAILED:" are treated as failures
+    solution_fail = "FAILED: Could not acquire data"
+    solution_ok = "Data acquired successfully"
+    solution_fail_lower = "failed: no data"
+
+    # Check detection logic
+    is_failure_1 = solution_fail.strip().upper().startswith("FAILED:")
+    is_failure_2 = solution_ok.strip().upper().startswith("FAILED:")
+    is_failure_3 = solution_fail_lower.strip().upper().startswith("FAILED:")
+
+    assert is_failure_1 is True
+    assert is_failure_2 is False
+    assert is_failure_3 is True
+
+
 def test_full_workflow_executes_steps(temp_output_dir, mock_tools):
     from langgraph.checkpoint.memory import MemorySaver
 

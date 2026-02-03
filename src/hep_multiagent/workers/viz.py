@@ -31,6 +31,12 @@ WORKFLOW:
 4. Create visualization with descriptive title and labels
 5. Report the output file path
 
+CRITICAL - DATA INTEGRITY:
+- If the task requires REAL data, you MUST visualize real data from prior step artifacts
+- Only create mock/demo visualizations if the task EXPLICITLY requests it
+- NEVER substitute mock data when real data was requested but unavailable
+- If required real data is unavailable, respond with "FAILED: <reason>"
+
 IMPORTANT:
 - Use exact column names from the data
 - Set appropriate axis labels and titles
@@ -42,12 +48,11 @@ If plot creation fails:
 1. State what went wrong (wrong column name, data type, etc.)
 2. Check available columns in the data file
 3. Retry with corrected parameters
+4. If data is unavailable, respond with "FAILED: Required data not available"
 
 Before each action, briefly state your reasoning.
 
-End by reporting the path to the saved visualization.
-
-TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, load_json, list_data_keys, save_json"""
+End by reporting the path to the saved visualization, or FAILED if data was missing."""
 
 
 def get_viz_tools():
