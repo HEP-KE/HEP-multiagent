@@ -1,6 +1,42 @@
-# hep-multiagent
+# HEP-multiagent
 
 Domain-agnostic multi-agent framework for scientific research queries.
+
+## Usage
+
+```python
+import asyncio
+import os
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from hep_multiagent import Agent
+
+load_dotenv()
+
+llm = ChatOpenAI(
+    model="gpt-4",
+    api_key=os.environ.get("OPENAI_API_KEY", "")
+)
+
+async def main():
+    # Create agent with MCP server (auto-installs from URL)
+    agent = await Agent(
+        llm=llm,
+        mcp_servers=[{"url": "https://github.com/HEP-KE/mcp-ke.git"}],
+        approval=True,
+    )
+
+    # Run query
+    result = await agent.run(
+        query="What is the mass distribution of halos at z=0?",
+        output_dir="./output_run_001",
+    )
+
+    # Resume interrupted run
+    result = await agent.run(query, output_dir="./output", resume=True)
+
+asyncio.run(main())
+```
 
 ## Architecture
 
@@ -8,49 +44,79 @@ Domain-agnostic multi-agent framework for scientific research queries.
 flowchart TD
     Query[User Query] --> Supervisor
 
-    Supervisor{Supervisor} -->|no plan| Detection
-    Supervisor -->|rejected + feedback| Detection
-    Supervisor -->|draft| Approval{Approval}
+    Supervisor{Supervisor} -->|no plan| Planner
+    Supervisor -->|rejected + feedback| Planner
+    Supervisor -->|draft| Approval{Human Approval}
     Supervisor -->|execute| Router
-    Supervisor -->|complete or failed| Synthesis
+    Supervisor -->|all done| Synthesis
 
-    subgraph Planner
-        Detection[detect_vague_terms / extract_file_paths]
-        Detection -->|vague terms| ArxivC[arxiv: web_search + get_arxiv_paper]
-        Detection -->|file paths| FileC[file: inspect_datafile]
-        Detection -->|no files| DataC[data: analyze tool docs]
-        ArxivC --> PlanLLM[Plan Generation LLM]
-        FileC --> PlanLLM
-        DataC --> PlanLLM
-        Detection -->|no triggers| PlanLLM
+    subgraph Planner[Planner Node]
+        Detection[Detect vague terms & file paths]
+        Detection -->|vague terms| ArxivC[Arxiv Consultant]
+        Detection -->|file paths| FileC[File Consultant]
+        Detection -->|MCP tools| DataC[Data Consultant]
+        ArxivC --> Context[Consultation Context]
+        FileC --> Context
+        DataC --> Context
+        Context --> PlanLLM[LLM: Generate JSON Plan]
     end
 
     PlanLLM -->|status=draft| Supervisor
-    Approval -->|approved status=active| Supervisor
-    Approval -->|rejected| Supervisor
+    Approval -->|approved| Supervisor
+    Approval -->|rejected + feedback| Supervisor
 
-    Router{Router} -->|step.worker_type| Workers
+    Router -->|worker_type| Workers
 
-    subgraph Workers[Workers LLM + Tools]
-        DataW[data: MCP tools]
-        ComputeW[compute: execute_python + inspect_datafile + save_json]
-        ResearchW[research: web_search + get_arxiv_paper + cite]
-        VizW[viz: bar + histogram + scatter + line charts]
+    subgraph Workers[Worker Execution]
+        DataW[data worker]
+        ComputeW[compute worker]
+        ResearchW[research worker]
+        VizW[viz worker]
     end
 
-    DataW -->|step complete| Supervisor
-    ComputeW -->|step complete| Supervisor
-    ResearchW -->|step complete| Supervisor
-    VizW -->|step complete| Supervisor
+    DataW -->|SUCCESS/FAILED| Supervisor
+    ComputeW -->|SUCCESS/FAILED| Supervisor
+    ResearchW -->|SUCCESS/FAILED| Supervisor
+    VizW -->|SUCCESS/FAILED| Supervisor
 
-    Synthesis[Synthesis LLM] --> Outputs
+    Synthesis[Synthesis Node] --> Outputs
 
-    subgraph Outputs
+    subgraph Outputs[Output Artifacts]
         PDF[report.pdf]
         BIB[references.bib]
         LOG[execution_log.md]
         NB[execution.ipynb]
     end
+```
+
+### Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant S as Supervisor
+    participant P as Planner
+    participant C as Consultants
+    participant W as Worker
+    participant Y as Synthesis
+
+    U->>S: Query
+    S->>P: no plan exists
+    P->>C: consult (vague terms/files/data)
+    C-->>P: context
+    P->>P: LLM generates plan
+    P-->>S: plan (draft)
+    S-->>U: await approval
+    U->>S: approved
+
+    loop For each step
+        S->>W: execute step
+        W->>W: LLM + tools
+        W-->>S: SUCCESS: result
+    end
+
+    S->>Y: all steps done
+    Y-->>U: report.pdf + artifacts
 ```
 
 ### Supervisor (deterministic)
@@ -84,14 +150,17 @@ Runs only on `execute` action:
 
 ### Workers
 
-Each worker runs LLM with bound tools in a loop until no more tool calls:
+Each worker runs LLM with bound tools in a loop until completion. Workers must end with explicit `SUCCESS:` or `FAILED:` markers for deterministic outcome detection.
+
+### Worker Tools
 
 | Worker | Tools | Purpose |
 |--------|-------|---------|
-| data | MCP tools only | Fetch/load data via MCP servers |
-| compute | `execute_python`, `inspect_datafile`, `save_json` + MCP | Transform data, compute statistics |
-| research | `web_search`, `get_arxiv_paper`, `cite`, `save_json` + MCP | Literature search, find definitions |
-| viz | `create_bar_chart`, `create_histogram`, `create_scatter_plot`, `create_line_plot`, `list_data_keys` + MCP | Publication-quality plots |
+| **data** | MCP tools | Fetch data from external sources |
+| **compute** | `load_json`, `execute_python`, `inspect_datafile`, `save_json` | Transform data, compute stats |
+| **research** | `search_arxiv_abstracts`, `get_arxiv_metadata`, `download_arxiv_full_text`, `cite`, `save_json` | Literature search, citations |
+| **viz** | `create_bar_chart`, `create_histogram`, `create_scatter_plot`, `create_line_plot`, `list_data_keys` | Publication-quality plots |
+
 
 ## File Structure
 
@@ -133,16 +202,19 @@ src/hep_multiagent/
 
 ## Features
 
-- **Multi-agent orchestration** - Supervisor routes between planner, workers, and synthesis
-- **Pre-planning consultation** - Researches vague terms and file structure before planning
-- **MCP tool integration** - Load MCP servers with custom environment variables
-- **Automatic planning** - LLM creates execution plans from natural language queries
-- **Human-in-the-loop approval** - Review and reject plans with feedback for re-planning
-- **Specialized workers** - Data retrieval, computation, research, visualization
-- **Academic reports** - LaTeX generation with BibTeX citations
-- **State checkpointing** - Resume interrupted runs (memory or SQLite)
-- **Execution logging** - Step-by-step markdown logs
-- **Notebook replay executes the tool calls that produce data, but doesn't re-run the report generation or logging features
+| Feature | Description |
+|---------|-------------|
+| **Multi-agent orchestration** | Supervisor routes between planner, workers, and synthesis |
+| **Pre-planning consultation** | Consults arxiv, file structure, and data sources before planning |
+| **Real-time logging** | Watch planner consultations, worker actions, and outcomes in `execution_log.md` |
+| **Explicit outcomes** | Workers return `SUCCESS:` or `FAILED:` for deterministic status detection |
+| **MCP tool integration** | Load any MCP server via git URL with custom env vars |
+| **Human-in-the-loop** | Review plans before execution, reject with feedback for re-planning |
+| **Specialized workers** | Data (MCP), compute (Python sandbox), research (arxiv + citations), viz (charts) |
+| **Worker data handoff** | `save_json` / `load_json` tools for passing data between steps |
+| **Academic reports** | LaTeX → PDF with BibTeX citations from `cite()` tool |
+| **State checkpointing** | Resume interrupted runs (SQLite backend) |
+| **Notebook replay** | `execution.ipynb` reproduces tool calls for data artifacts |
 
 
 ## Agent Parameters
@@ -153,41 +225,6 @@ src/hep_multiagent/
 | `mcp_servers` | List[dict] | `None` | MCP servers with `url`, optional `env`/`args` |
 | `approval` | bool | `False` | Human-in-the-loop plan approval |
 
-## Usage
-
-```python
-import asyncio
-import os
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from hep_multiagent import Agent
-
-load_dotenv()
-
-llm = ChatOpenAI(
-    model="gpt-4",
-    api_key=os.environ.get("OPENAI_API_KEY", "")
-)
-
-async def main():
-    # Create agent with MCP server (auto-installs from URL)
-    agent = await Agent(
-        llm=llm,
-        mcp_servers=[{"url": "https://github.com/HEP-KE/mcp-ke.git"}],
-        approval=True,
-    )
-
-    # Run query
-    result = await agent.run(
-        query="What is the mass distribution of halos at z=0?",
-        output_dir="./output_run_001",
-    )
-
-    # Resume interrupted run
-    result = await agent.run(query, output_dir="./output", resume=True)
-
-asyncio.run(main())
-```
 
 ## MCP Tool Development
 

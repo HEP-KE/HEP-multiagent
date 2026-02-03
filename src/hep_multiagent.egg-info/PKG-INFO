@@ -4,6 +4,7 @@ Version: 0.1.0
 Summary: Domain-agnostic multi-agent framework for scientific research queries
 Requires-Python: >=3.10
 Requires-Dist: langchain-core>=0.1.0
+Requires-Dist: langchain-openai>=0.1.0
 Requires-Dist: langgraph>=0.0.20
 Requires-Dist: langgraph-checkpoint-sqlite>=2.0.0
 Requires-Dist: langchain-mcp-adapters>=0.1.0
