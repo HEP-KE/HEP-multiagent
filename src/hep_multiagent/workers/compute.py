@@ -50,9 +50,8 @@ If an operation fails:
 
 Before each action, briefly state your reasoning.
 
-REQUIRED: End your response with exactly one of:
-- SUCCESS: <summary of computation results>
-- FAILED: <reason why computation could not be completed>"""
+REQUIRED: When done, STOP calling tools and respond with:
+- SUCCESS: <summary> OR FAILED: <reason>"""
 
 
 from ..config import SANDBOX_ALLOWED_IMPORTS

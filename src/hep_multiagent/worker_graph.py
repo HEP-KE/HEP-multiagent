@@ -18,7 +18,7 @@ class WorkerState(TypedDict, total=False):
     tool_calls: Annotated[List[str], add]
 
 
-def call_model(state: WorkerState, model) -> dict:
+def call_model(state: WorkerState, model, logger=None) -> dict:
     iteration = state.get("iteration", 0)
     max_iter = state.get("max_iterations", 25)
 
@@ -26,6 +26,9 @@ def call_model(state: WorkerState, model) -> dict:
         return {"error": f"Max iterations ({max_iter}) reached"}
 
     response = model.invoke(state.get("messages", []))
+
+    if logger and response.content:
+        logger.thought(response.content)
 
     pending = [{"id": tc["id"], "name": tc["name"], "args": tc["args"]} for tc in (response.tool_calls or [])]
     solution = response.content if not pending and response.content else None
@@ -94,7 +97,7 @@ def build(llm, tools, extensions, logger=None, notebook=None, worker_type=None):
     model = llm.bind_tools(tools)
 
     graph = StateGraph(WorkerState)
-    graph.add_node("model", lambda s: call_model(s, model))
+    graph.add_node("model", lambda s: call_model(s, model, logger))
     graph.add_node("tool", lambda s: execute_tool(s, tools, extensions, logger, notebook, worker_type))
 
     graph.add_edge(START, "model")

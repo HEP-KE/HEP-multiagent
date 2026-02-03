@@ -7,9 +7,10 @@ async def recall(memory, worker_type: str) -> str:
     return await memory.get(worker_type)
 
 
-async def learn(memory, worker_type: str, status: str, error: str):
+async def learn(memory, worker_type: str, status: str, error: str, task: str = "", output: str = ""):
     if memory and worker_type and status == "failed" and error:
-        await memory.save(worker_type, error[:350])
+        lesson = f"Task: {task[:150]}\nAttempt: {output[:300]}\nFailed: {error[:150]}"
+        await memory.save(worker_type, lesson)
 
 
 async def recall_and_learn(memory, worker_type: str, status: str = None, error: str = None) -> str:

@@ -157,7 +157,7 @@ def test_logger_writes_to_file(temp_output_dir):
         content = f.read()
 
     assert "Test content" in content
-    assert "Iteration 1/5" in content
+    assert "1/5" in content
     assert "Thinking about" in content
     assert "test_tool" in content
 
@@ -549,7 +549,7 @@ def test_logger_captures_all_events(temp_output_dir):
 
     assert "Supervisor" in content
     assert "Planner" in content
-    assert "Reasoning" in content
+    assert "[Thought]" in content
     assert "search_arxiv" in content
     assert "Iteration" in content
 

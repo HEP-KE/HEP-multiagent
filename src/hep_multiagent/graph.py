@@ -78,7 +78,8 @@ def build_graph(
         lessons = await recall(lesson_memory, worker_type)
         result = await worker.execute(s, llm, tools, WORKERS, artifact_extensions, get_output_dir(), logger, notebook, lessons)
         updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
-        await learn(lesson_memory, worker_type, updated_step.get("status"), updated_step.get("error"))
+        task = step["description"] if step else ""
+        await learn(lesson_memory, worker_type, updated_step.get("status"), updated_step.get("error"), task, updated_step.get("output", ""))
         if logger and step:
             _log_worker_result(logger, step, updated_step)
         return result

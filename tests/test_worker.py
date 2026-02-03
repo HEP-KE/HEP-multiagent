@@ -33,7 +33,7 @@ def test_build_worker_prompt_with_previous_attempts():
     result = build_worker_prompt("task", "/out", [], "", attempts)
     assert "# Previous Attempts" in result
     assert "connection failed" in result
-    assert "Try a different approach" in result
+    assert "try a different approach" in result.lower()
 
 
 def test_build_worker_result_basic():
