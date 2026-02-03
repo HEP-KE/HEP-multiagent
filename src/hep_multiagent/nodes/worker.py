@@ -29,13 +29,14 @@ async def execute(
     context, artifacts = get_dependency_context(plan, step_id)
     output_dir = state.get("output_dir", default_output_dir)
     previous_attempts = step.get("attempts", [])
+    research_context = plan.get("research_context")
 
     worker_tools = list(tools)
     if step["worker_type"] in WORKER_TOOLS:
         worker_tools.extend(WORKER_TOOLS[step["worker_type"]]())
 
     prompt = workers.get(step["worker_type"], workers["data"])
-    task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts)
+    task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts, research_context)
 
     graph = worker_graph.build(llm, worker_tools, artifact_extensions, logger, notebook, step["worker_type"])
 

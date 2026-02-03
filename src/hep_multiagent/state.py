@@ -26,11 +26,12 @@ class PlanStep(TypedDict):
     attempts: List[StepAttempt]
 
 
-class Plan(TypedDict):
+class Plan(TypedDict, total=False):
     id: str
     goal: str
     status: Literal["draft", "active", "completed", "failed"]
     steps: List[PlanStep]
+    research_context: Optional[str]
 
 
 class AgentState(TypedDict, total=False):
@@ -41,7 +42,6 @@ class AgentState(TypedDict, total=False):
     final_report: Optional[str]
     user_approved: Optional[bool]
     planning_feedback: Optional[str]
-    planning_consultation_context: Optional[str]
     output_dir: str
 
 

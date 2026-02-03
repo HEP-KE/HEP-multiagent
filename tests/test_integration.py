@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from langchain_core.messages import AIMessage
+
 from hep_multiagent import Agent
 from hep_multiagent.config import WORKERS, WORKER_TOOLS
 from hep_multiagent.graph import build_graph
@@ -36,13 +38,13 @@ class MockLLM:
         self.bound_tools = tools
         return self
 
-    async def ainvoke(self, messages):
+    def _make_response(self, messages):
         self.call_count += 1
-        response = MagicMock()
         content = str(messages[-1].content) if messages else ""
+        system_content = str(messages[0].content) if messages else ""
 
-        if self.call_count == 1:
-            response.content = '''```json
+        if "planning agent" in system_content.lower() or "output only valid json" in content.lower():
+            return AIMessage(content='''```json
 {
     "goal": "Test query execution",
     "steps": [
@@ -52,19 +54,21 @@ class MockLLM:
          "description": "Analyze the search results", "depends_on": ["s1"]}
     ]
 }
-```'''
-            response.tool_calls = []
+```''')
+        elif "data acquisition" in system_content.lower() or "what data sources" in content.lower():
+            return AIMessage(content="Available data sources: arxiv papers, simulation data.")
         elif "research" in content.lower() or "search" in content.lower():
-            response.content = "Found 3 relevant papers on dark matter detection."
-            response.tool_calls = []
+            return AIMessage(content="Found 3 relevant papers on dark matter detection.")
         elif "compute" in content.lower() or "analyze" in content.lower():
-            response.content = "Analysis complete. Results saved."
-            response.tool_calls = []
+            return AIMessage(content="Analysis complete. Results saved.")
         else:
-            response.content = r"\section{Answer}\nTest completed successfully."
-            response.tool_calls = []
+            return AIMessage(content=r"\section{Answer}\nTest completed successfully.")
 
-        return response
+    async def ainvoke(self, messages):
+        return self._make_response(messages)
+
+    def invoke(self, messages):
+        return self._make_response(messages)
 
 
 @pytest.fixture

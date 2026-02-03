@@ -25,23 +25,17 @@ PROMPT = """You are a planning agent. Create execution plans for data analysis t
 2. **Dependencies**: Use depends_on to specify step execution order
 3. **Specific instructions**: Include exact column names, thresholds, and parameters
 4. **One task per step**: Each step should do one focused thing
-5. **Define vague terms**: If query uses subjective words (interesting, unusual, best), define specific quantitative criteria in the step description
-6. **Explicit file handoff**: When a step depends on another, specify what file to load (e.g., "Load papers.json from s1")
-7. **Minimal work**: Only do what the query asks. No extra analysis, no extra files, no over-engineering
+5. **Explicit file handoff**: When a step depends on another, specify what file to load (e.g., "Load papers.json from s1")
+6. **Minimal work**: Only do what the query asks. No extra analysis, no extra files, no over-engineering
 
 ## Worker Selection
 
 - **data**: Fetch remote data via MCP tools
 - **compute**: Load files, filter, transform, compute statistics
-- **research**: Search literature for definitions and methods (use BEFORE compute if criteria need definition)
+- **research**: Search literature ONLY when no research context is provided above
 - **viz**: Create plots and visualizations
 
-## Handling Subjective Terms
-
-If the query contains vague terms like "interesting", "unusual", or "best":
-1. Add a research step FIRST to find scientific definitions/thresholds
-2. Embed those specific criteria into subsequent step descriptions
-3. Example: "interesting halos" → research finds M>1e14, then compute step says "filter where mass > 1e14"
+{research_instruction}
 
 ## Output Format
 
@@ -108,7 +102,7 @@ def extract_json(text: str) -> Optional[str]:
 
 
 async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logger=None) -> dict:
-    tool_docs = "\n".join(f"- {t.name}: {t.description}" for t in tools)
+    tool_docs_str = "\n".join(f"- {t.name}: {t.description}" for t in tools)
 
     query = ""
     for msg in state.get("messages", []):
@@ -118,6 +112,7 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
 
     context_parts = []
     consultation_parts = []
+    arxiv_consulted = False
 
     vague = detect_vague_terms(query)
     files = extract_file_paths(query)
@@ -128,7 +123,8 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
         result = await CONSULTANTS["arxiv"].consult(llm, get_research_tools(), query)
         if logger:
             logger.log("Planner", f"Arxiv consultation:\n{result[:500]}...")
-        consultation_parts.append(f"## Research\n{result}")
+        consultation_parts.append(f"## Research Results (already completed - DO NOT re-research)\n{result}")
+        arxiv_consulted = True
 
     for path in files:
         if logger:
@@ -138,14 +134,14 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
             logger.log("Planner", f"File consultation:\n{result[:500]}...")
         consultation_parts.append(f"## File: {path}\n{result}")
 
-    if not files and tools:
-        tool_docs = []
+    if not files and not arxiv_consulted and tools:
+        tool_doc_list = []
         for t in tools:
             schema = t.args_schema if isinstance(t.args_schema, dict) else (t.args_schema.schema() if t.args_schema else {})
             params = schema.get("properties", {})
             param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
-            tool_docs.append(f"- {t.name}({param_str}): {t.description}")
-        question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_docs)
+            tool_doc_list.append(f"- {t.name}({param_str}): {t.description}")
+        question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_doc_list)
         if logger:
             logger.log("Planner", "Consulting data sources...")
         result = await CONSULTANTS["data"].consult(llm, tools, question)
@@ -155,7 +151,7 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
 
     consultation_context = "\n\n".join(consultation_parts)
     if consultation_context:
-        context_parts.append(f"## Research Results (embed these into step descriptions, do not re-research)\n{consultation_context}")
+        context_parts.append(consultation_context)
 
     feedback = state.get("planning_feedback")
     if feedback:
@@ -163,10 +159,17 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
 
     context = "\n".join(context_parts) if context_parts else ""
 
+    research_instruction = ""
+    if arxiv_consulted:
+        research_instruction = """## CRITICAL: Research Already Done
+The arxiv research above is COMPLETE. Do NOT create any research worker steps.
+Use the research results directly in compute/viz steps. The papers, methods, and findings are already available above."""
+
     prompt = PROMPT.format(
         worker_docs=worker_docs,
-        tool_docs=f"Available tools:\n{tool_docs}" if tool_docs else "",
+        tool_docs=f"Available tools:\n{tool_docs_str}" if tool_docs_str else "",
         context=context,
+        research_instruction=research_instruction,
     )
 
     if logger:
@@ -189,6 +192,7 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
         "goal": plan_data["goal"],
         "status": "draft",
         "steps": [],
+        "research_context": consultation_context if arxiv_consulted else None,
     }
 
     for step in plan_data["steps"]:
@@ -206,4 +210,4 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
             "attempts": [],
         })
 
-    return {"plan": result, "planning_consultation_context": consultation_context}
+    return {"plan": result}

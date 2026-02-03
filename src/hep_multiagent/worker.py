@@ -41,8 +41,11 @@ def build_worker_prompt(
     artifacts: List[str],
     context: str,
     previous_attempts: List[dict],
+    research_context: str = None,
 ) -> str:
     parts = [f"# Task\n{task}", f"# Output Directory\nSave files to: {output_dir}"]
+    if research_context:
+        parts.append(f"# Research Context (already gathered - use directly)\n{research_context}")
     if artifacts:
         parts.append("# Available Files\n" + "\n".join(artifacts))
     if context:
