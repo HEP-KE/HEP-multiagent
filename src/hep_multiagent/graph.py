@@ -47,6 +47,18 @@ def _log_worker_result(logger, step, updated_step):
     logger.log("Worker", "\n".join(lines))
 
 
+def _log_lessons_recalled(logger, worker_type: str, lessons: str):
+    if not lessons:
+        logger.log("Memory", f"No past lessons for **{worker_type}** worker")
+    else:
+        count = lessons.count("\n- ")
+        logger.log("Memory", f"Recalled **{count}** lesson(s) for **{worker_type}** worker\n{lessons[:500]}")
+
+
+def _log_lesson_saved(logger, worker_type: str, task: str, error: str):
+    logger.log("Memory", f"Saved lesson for **{worker_type}**: {task[:100]}... → {error[:100]}")
+
+
 def _format_plan_log(plan) -> str:
     lines = [f"**Goal**: {plan['goal']}\n"]
     for step in plan.get("steps", []):
@@ -76,10 +88,16 @@ def build_graph(
         if logger and step:
             logger.log("Worker", f"Executing: **{step['name']}**\n\n> {step['description'][:300]}")
         lessons = await recall(lesson_memory, worker_type)
+        if logger and worker_type:
+            _log_lessons_recalled(logger, worker_type, lessons)
         result = await worker.execute(s, llm, tools, WORKERS, artifact_extensions, get_output_dir(), logger, notebook, lessons)
         updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
         task = step["description"] if step else ""
-        await learn(lesson_memory, worker_type, updated_step.get("status"), updated_step.get("error"), task, updated_step.get("output", ""))
+        status = updated_step.get("status")
+        error = updated_step.get("error")
+        if status == "failed" and error and logger:
+            _log_lesson_saved(logger, worker_type, task, error)
+        await learn(lesson_memory, worker_type, status, error, task, updated_step.get("output", ""))
         if logger and step:
             _log_worker_result(logger, step, updated_step)
         return result

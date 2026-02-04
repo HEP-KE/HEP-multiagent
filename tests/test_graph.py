@@ -1,4 +1,4 @@
-from hep_multiagent.graph import _format_plan_log, _supervisor_reason
+from hep_multiagent.graph import _format_plan_log, _supervisor_reason, _log_lessons_recalled, _log_lesson_saved
 
 
 def test_format_plan_log_basic():
@@ -82,3 +82,39 @@ def test_supervisor_reason_execute():
     result = _supervisor_reason({}, plan, "execute")
     assert "Ready Step" in result
     assert "Pending Step" not in result
+
+
+class MockLogger:
+    def __init__(self):
+        self.logs = []
+
+    def log(self, source, message):
+        self.logs.append((source, message))
+
+
+def test_log_lessons_recalled_none():
+    logger = MockLogger()
+    _log_lessons_recalled(logger, "compute", "")
+    assert len(logger.logs) == 1
+    assert "Memory" in logger.logs[0][0]
+    assert "No past lessons" in logger.logs[0][1]
+    assert "compute" in logger.logs[0][1]
+
+
+def test_log_lessons_recalled_with_lessons():
+    logger = MockLogger()
+    lessons = "# Lessons from Past Failures\n- Task: x\nFailed: y\n- Task: z\nFailed: w"
+    _log_lessons_recalled(logger, "research", lessons)
+    assert len(logger.logs) == 1
+    assert "2" in logger.logs[0][1]
+    assert "research" in logger.logs[0][1]
+
+
+def test_log_lesson_saved():
+    logger = MockLogger()
+    _log_lesson_saved(logger, "viz", "Create a bar chart of galaxy masses", "File not found: data.csv")
+    assert len(logger.logs) == 1
+    assert "Memory" in logger.logs[0][0]
+    assert "viz" in logger.logs[0][1]
+    assert "bar chart" in logger.logs[0][1]
+    assert "File not found" in logger.logs[0][1]
