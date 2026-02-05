@@ -9,6 +9,7 @@ from .config import (
     ACADEMIC_REPORT, DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
     REPORTS, REFERENCES, SQLiteCheckpoint, APPROVAL, ExecutionNotebook,
 )
+from .workers.compute import set_code_approval
 from .features.lesson_memory import LessonMemory
 from .graph import build_graph
 from .features.agent_trace import MarkdownLogger
@@ -30,6 +31,7 @@ class Agent:
         self.references = REFERENCES["bibtex"]() if ACADEMIC_REPORT else None
         self.checkpoint = None  # initialized in run() with cwd path
         self.approval = APPROVAL["interrupt"]() if approval else APPROVAL["auto"]()
+        set_code_approval(self.approval if approval else None)
 
         self.output_dir = None
         self.logger = MarkdownLogger()

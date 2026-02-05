@@ -32,39 +32,26 @@ def _supervisor_reason(state, plan, action):
     return ""
 
 
-def _log_worker_result(logger, step, updated_step):
-    status = updated_step.get("status", "unknown")
-    artifacts = updated_step.get("artifacts", [])
-    solution = (updated_step.get("solution") or "")[:300]
-    error = updated_step.get("error")
-    lines = [f"Finished: **{step['name']}** ({status})"]
-    if artifacts:
-        lines.append(f"\nArtifacts: {', '.join(artifacts)}")
-    if solution:
-        lines.append(f"\nSolution: {solution}")
-    if error:
-        lines.append(f"\nError: {error}")
-    logger.log("Worker", "\n".join(lines))
 
 
 def _log_lessons_recalled(logger, worker_type: str, lessons: str):
     if not lessons:
-        logger.log("Memory", f"No past lessons for **{worker_type}** worker")
+        logger.log("Memory", f"No past lessons for {worker_type} worker")
     else:
         count = lessons.count("\n- ")
-        logger.log("Memory", f"Recalled **{count}** lesson(s) for **{worker_type}** worker\n{lessons[:500]}")
+        logger.log("Memory", f"Recalled {count} lesson(s) for {worker_type} worker\n{lessons}")
 
 
 def _log_lesson_saved(logger, worker_type: str, task: str, error: str):
-    logger.log("Memory", f"Saved lesson for **{worker_type}**: {task[:100]}... → {error[:100]}")
+    logger.log("Memory", f"Saved lesson for {worker_type}: {task} → {error}")
 
 
 def _format_plan_log(plan) -> str:
-    lines = [f"**Goal**: {plan['goal']}\n"]
+    lines = [f"Goal: {plan['goal']}\n"]
     for step in plan.get("steps", []):
         deps = f" (depends: {', '.join(step['depends_on'])})" if step.get("depends_on") else ""
-        lines.append(f"- `{step['id']}` [{step['worker_type']}] {step['name']}{deps}")
-        lines.append(f"  > {step['description'][:200]}")
+        lines.append(f"- {step['id']} [{step['worker_type']}] {step['name']}{deps}")
+        lines.append(f"  > {step['description']}")
     return "\n".join(lines)
 
 
@@ -81,12 +68,20 @@ def build_graph(
     lesson_memory: LessonMemory = None,
 ):
     async def worker_node(s):
+        from .state import get_dependency_context
         plan = s.get("plan")
         step_id = s.get("current_step_id")
         step = next((st for st in plan["steps"] if st["id"] == step_id), None) if plan and step_id else None
         worker_type = step["worker_type"] if step else None
         if logger and step:
-            logger.log("Worker", f"Executing: **{step['name']}**\n\n> {step['description'][:300]}")
+            context, artifacts = get_dependency_context(plan, step_id)
+            node_name = f"{step['worker_type'].title()} Worker: {step['name']}"
+            inputs = [f"Task: {step['description']}"]
+            if artifacts:
+                inputs.append(f"Artifacts: {', '.join(artifacts)}")
+            if context:
+                inputs.append(f"Context from dependencies: {context}")
+            logger.log(node_name, "\n".join(inputs))
         lessons = await recall(lesson_memory, worker_type)
         if logger and worker_type:
             _log_lessons_recalled(logger, worker_type, lessons)
@@ -99,12 +94,29 @@ def build_graph(
             _log_lesson_saved(logger, worker_type, task, error)
         await learn(lesson_memory, worker_type, status, error, task, updated_step.get("output", ""))
         if logger and step:
-            _log_worker_result(logger, step, updated_step)
+            icon = "✓" if status == "completed" else "✗"
+            outcome = f"Outcome: {icon} {status.upper()}"
+            if error:
+                outcome += f"\nError: {error}"
+            if updated_step.get("artifacts"):
+                outcome += f"\nFiles: {', '.join(updated_step['artifacts'])}"
+            node_name = f"{step['worker_type'].title()} Worker: {step['name']}"
+            logger.log(node_name, outcome)
         return result
 
     async def planner_node(s):
         if logger:
-            logger.log("Planner", "Creating execution plan...")
+            inputs = ["Creating execution plan"]
+            query = ""
+            for msg in s.get("messages", []):
+                if hasattr(msg, "content"):
+                    query = msg.content
+                    break
+            if query:
+                inputs.append(f"Query: {query}")
+            if s.get("planning_feedback"):
+                inputs.append(f"Feedback: {s['planning_feedback']}")
+            logger.log("Planner", "\n".join(inputs))
         result = await planner.plan(s, llm, tools, get_worker_docs(), logger)
         if logger:
             plan = result.get("plan")
@@ -116,18 +128,45 @@ def build_graph(
 
     async def synthesis_node(s):
         if logger:
-            logger.log("Synthesis", "Generating final report...")
+            plan = s.get("plan", {})
+            steps = plan.get("steps", [])
+            completed = [st["name"] for st in steps if st["status"] == "completed"]
+            failed = [st["name"] for st in steps if st["status"] == "failed"]
+            artifacts = []
+            for st in steps:
+                artifacts.extend(st.get("artifacts", []))
+            inputs = ["Generating final report"]
+            inputs.append(f"Completed steps: {', '.join(completed) if completed else 'none'}")
+            if failed:
+                inputs.append(f"Failed steps: {', '.join(failed)}")
+            if artifacts:
+                inputs.append(f"Artifacts: {', '.join(artifacts)}")
+            logger.log("Synthesis", "\n".join(inputs))
         return await synthesis.synthesize(s, llm, report_writer, references, logger)
 
     def supervisor_node(s):
-        if logger and not s.get("plan"):
-            logger.log("Supervisor", "Analyzing query...")
         result = supervisor.supervise(s)
         if logger:
             action = result.get("next_action", "unknown")
             plan = s.get("plan")
-            reason = _supervisor_reason(s, plan, action)
-            logger.log("Supervisor", f"Decision: **{action}**\n\n{reason}")
+            if plan:
+                lines = [f"Decision: {action}"]
+                for step in plan.get("steps", []):
+                    status = step["status"]
+                    if status == "completed":
+                        mark = "[✓]"
+                    elif status == "failed":
+                        mark = "[✗]"
+                    elif status == "skipped":
+                        mark = "[-]"
+                    elif status == "ready":
+                        mark = "[>]"
+                    else:  # pending
+                        mark = "[ ]"
+                    lines.append(f"  {mark} {step['name']}")
+                logger.log("Supervisor", "\n".join(lines))
+            else:
+                logger.log("Supervisor", f"Decision: {action}")
         return result
 
     def router_node(s):
@@ -138,7 +177,7 @@ def build_graph(
             if step_id and plan:
                 step = next((st for st in plan["steps"] if st["id"] == step_id), None)
                 if step:
-                    logger.log("Router", f"Routing `{step['name']}` → **{step['worker_type']}** worker")
+                    logger.log("Router", f"Routing {step['name']} → {step['worker_type'].title()} Worker")
         return result
 
     graph = StateGraph(AgentState)

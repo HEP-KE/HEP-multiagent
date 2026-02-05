@@ -9,7 +9,7 @@ def test_format_plan_log_basic():
         ]
     }
     result = _format_plan_log(plan)
-    assert "**Goal**: Test goal" in result
+    assert "Goal: Test goal" in result
     assert "Step One" in result
     assert "[data]" in result
 
@@ -26,7 +26,7 @@ def test_format_plan_log_with_dependencies():
     assert "(depends: 1)" in result
 
 
-def test_format_plan_log_truncates_description():
+def test_format_plan_log_full_description():
     plan = {
         "goal": "Goal",
         "steps": [
@@ -34,7 +34,7 @@ def test_format_plan_log_truncates_description():
         ]
     }
     result = _format_plan_log(plan)
-    assert len(result) < 500
+    assert "x" * 300 in result
 
 
 def test_supervisor_reason_plan_no_plan():

@@ -16,6 +16,8 @@ class WorkerState(TypedDict, total=False):
     outputs: Annotated[List[str], add]
     artifacts: List[str]
     tool_calls: Annotated[List[str], add]
+    thoughts: Annotated[List[str], add]
+    tool_issues: Annotated[List[str], add]
 
 
 def call_model(state: WorkerState, model, logger=None) -> dict:
@@ -39,6 +41,7 @@ def call_model(state: WorkerState, model, logger=None) -> dict:
         "tool_index": 0,
         "solution": solution,
         "iteration": iteration + 1,
+        "thoughts": [response.content] if response.content else [],
     }
 
 
@@ -73,16 +76,24 @@ def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=No
 
     if logger:
         logger.tool_call(name, args, result)
-    if notebook:
+    if notebook and name not in ("final_answer", "log_issue"):
         notebook.tool_call(name, args, result, worker_type)
 
-    return {
+    updates = {
         "messages": [ToolMessage(content=result, tool_call_id=tc["id"])],
         "outputs": [f"[{name}]: {result[:500]}"],
         "tool_index": idx + 1,
         "artifacts": state.get("artifacts", []) + extract_artifacts(result, extensions),
         "tool_calls": [name],
     }
+
+    if name == "final_answer" and (result.startswith("success:") or result.startswith("failed:")):
+        updates["solution"] = result
+
+    if name == "log_issue" and result.startswith("ISSUE_LOGGED:"):
+        updates["tool_issues"] = [result]
+
+    return updates
 
 
 def route(state: WorkerState) -> Literal["done", "model", "tool"]:

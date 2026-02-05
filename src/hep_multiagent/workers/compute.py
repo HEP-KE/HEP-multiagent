@@ -5,53 +5,52 @@ from langchain_core.tools import tool
 
 from ..features import validators as validate
 from ..features.agent_tools import load_json, save_json
+from .research import cite, read_arxiv_chunk as read_text_file
+
+_code_approval = None
 
 
-PROMPT = """You are a computational analysis specialist.
+def set_code_approval(approval):
+    global _code_approval
+    _code_approval = approval
 
-TOOLS: load_json, execute_python, inspect_datafile, save_json, save_array, save_dict, load_array, load_dict
 
-MCP TOOLS (save_array, save_dict, compute_*, get_*_params): Pass LITERAL values, not variable names.
-WRONG: save_array(array='my_arr')  RIGHT: save_array(array=[1.0, 2.0], filename='x.npy')
+PROMPT = """You are a compute worker. Your job: load data, filter, transform, compute statistics.
 
-Variables persist between execute_python calls.
+## CRITICAL: Do Exactly What's Asked
+- Do ONLY what the task description says. Nothing more.
+- Do NOT embellish, expand scope, create frameworks, or over-deliver.
+- Simple task = simple solution. A 1-sentence task should not produce 100 lines of code.
 
-Your job is to perform data analysis and computations using available tools.
+## CRITICAL: Tools First, Code Last
+- Use your available tools FIRST. They were written by professionals.
+- Only use execute_python if NO tool exists for the operation.
+- If a tool can do it, use the tool. Do not reimplement in Python.
 
-AVAILABLE CAPABILITIES:
-- Load and inspect data files (HDF5, CSV, FITS, etc.)
+## Your Role (stay in scope)
+- Load/inspect data files
 - Filter and transform data
-- Compute statistics and derived quantities
-- Execute Python code for custom analysis
+- Compute statistics
+- Save results
+Do NOT: create visualizations (viz worker), search papers (research worker), fetch remote data (data worker)
 
-WORKFLOW:
-1. Load the data file from the path provided in prior results
-2. Inspect available columns/fields
-3. Perform the requested analysis
-4. Report results with specific values
+## When Reading Papers
+If task involves reading paper content:
+- Extract ONLY the specific information requested
+- cite() any values with exact quotes: cite(arxiv_id, '["exact quote"]', bib_path)
+- Do NOT create summaries, frameworks, or analyses beyond what's asked
 
-CRITICAL - DATA INTEGRITY:
-- If the task requires REAL data, you MUST use real data from files or prior step outputs
-- Only create mock/synthetic data if the task EXPLICITLY requests it
-- NEVER substitute mock data when real data was requested but unavailable
-- If required real data is unavailable, respond with "FAILED: <reason>"
+## Data Integrity
+- Use REAL data from files or prior step outputs
+- NEVER create mock/synthetic data unless explicitly requested
 
-IMPORTANT:
-- Use exact column names from the data
-- Include print() statements to show intermediate results
-- Be quantitative: include specific numbers with units
+## Report Issues
+Call log_issue(component, problem, suggestion) when you:
+- Encounter a tool failure or unexpected result
+- Write code because no tool exists for the operation
+- Notice an opportunity for a new tool that would help
 
-ERROR RECOVERY:
-If an operation fails:
-1. State what went wrong based on the error
-2. Check column names or data types
-3. Retry with corrected approach
-4. If data is unavailable after retries, respond with "FAILED: Required data not available"
-
-Before each action, briefly state your reasoning.
-
-REQUIRED: When done, STOP calling tools and respond with:
-- SUCCESS: <summary> OR FAILED: <reason>"""
+REQUIRED: final_answer("success", "brief result") or final_answer("failed", "reason")"""
 
 
 from ..config import SANDBOX_ALLOWED_IMPORTS
@@ -128,13 +127,16 @@ def execute_python(code: str) -> str:
     Returns:
         Printed output from code execution, or error message if failed.
     """
-    # Input validation
     try:
         validate.non_empty(code, "code")
     except ValueError as e:
         return str(e)
 
-    # Tool logic
+    if _code_approval:
+        response = _code_approval.request_code_approval(code)
+        if not response.approved:
+            return "Code execution rejected by user"
+
     return _Sandbox().execute(code)
 
 
@@ -167,4 +169,4 @@ def inspect_datafile(file_path: str) -> str:
 
 
 def get_compute_tools():
-    return [load_json, execute_python, inspect_datafile, save_json]
+    return [load_json, execute_python, inspect_datafile, save_json, cite, read_text_file]

@@ -43,6 +43,9 @@ class AutoApproval:
     def request_approval(self, plan: Plan) -> ApprovalResponse:
         return ApprovalResponse(approved=True)
 
+    def request_code_approval(self, code: str) -> ApprovalResponse:
+        return ApprovalResponse(approved=True)
+
 
 class InterruptApproval:
     def request_approval(self, plan: Plan) -> ApprovalResponse:
@@ -62,3 +65,12 @@ class InterruptApproval:
             return ApprovalResponse(approved=False)
         else:
             return ApprovalResponse(approved=False, feedback=response)
+
+    def request_code_approval(self, code: str) -> ApprovalResponse:
+        print("\n" + "=" * 50)
+        print("CODE EXECUTION APPROVAL")
+        print("=" * 50)
+        print(code[:2000])
+        print("=" * 50)
+        response = input("Execute? [y/n]: ").strip().lower()
+        return ApprovalResponse(approved=(response == "y"))

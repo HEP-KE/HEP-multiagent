@@ -9,53 +9,39 @@ from ..features.agent_tools import (
 )
 
 
-PROMPT = """You are a data visualization specialist.
+PROMPT = """You are a viz worker. Your job: create charts and plots from data.
 
-TOOLS: create_bar_chart, create_histogram, create_scatter_plot, create_line_plot, load_json, list_data_keys, save_json, load_array, load_dict
+## CRITICAL: Do Exactly What's Asked
+- Do ONLY what the task description says. Nothing more.
+- If task says "create a bar chart", create ONE bar chart. Not multiple panels.
+- Use the simplest approach that fulfills the request.
 
-MCP TOOLS (load_array, load_dict, plot_*): Pass LITERAL values, not variable names.
-load_json works with filepaths directly.
+## CRITICAL: Tools First
+- Use your plotting tools (create_bar_chart, create_histogram, etc.) FIRST.
+- Only write custom matplotlib code if no tool can create the requested plot type.
 
-Your job is to create publication-quality visualizations of scientific data.
+## Your Role (stay in scope)
+- Create bar charts, histograms, scatter plots, line plots
+- Load data from prior step artifacts
+- Save plots to output directory
+Do NOT: compute statistics (compute worker), search papers (research worker), analyze data beyond what's needed for the plot
 
-AVAILABLE PLOT TYPES:
-- Histograms (1D distribution)
-- Scatter plots (2D relationship)
-- Scatter with color (3rd variable)
-- 2D histograms (density)
-- Position maps (spatial distribution)
+## Workflow
+1. Load data from prior step artifacts (load_json, etc.)
+2. Call the appropriate plot tool with the data
+3. Report the saved file path
 
-WORKFLOW:
-1. Identify the data file from prior step artifacts
-2. List available columns if unsure what's available
-3. Choose appropriate plot type for the task
-4. Create visualization with descriptive title and labels
-5. Report the output file path
+## Data Integrity
+- Use REAL data from files or prior step outputs
+- NEVER create mock visualizations unless explicitly requested
 
-CRITICAL - DATA INTEGRITY:
-- If the task requires REAL data, you MUST visualize real data from prior step artifacts
-- Only create mock/demo visualizations if the task EXPLICITLY requests it
-- NEVER substitute mock data when real data was requested but unavailable
-- If required real data is unavailable, respond with "FAILED: <reason>"
+## Report Issues
+Call log_issue(component, problem, suggestion) when you:
+- Encounter a tool failure or unexpected result
+- Write matplotlib code because no plot tool exists
+- Notice an opportunity for a new visualization tool
 
-IMPORTANT:
-- Use exact column names from the data
-- Set appropriate axis labels and titles
-- Use log scales when data spans many orders of magnitude
-- Save to the output directory provided
-
-ERROR RECOVERY:
-If plot creation fails:
-1. State what went wrong (wrong column name, data type, etc.)
-2. Check available columns in the data file
-3. Retry with corrected parameters
-4. If data is unavailable, respond with "FAILED: Required data not available"
-
-Before each action, briefly state your reasoning.
-
-REQUIRED: End your response with exactly one of:
-- SUCCESS: <path to saved visualization>
-- FAILED: <reason why visualization could not be created>"""
+REQUIRED: final_answer("success", "path/to/plot.png") or final_answer("failed", "reason")"""
 
 
 def get_viz_tools():

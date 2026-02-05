@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Literal
 
 import matplotlib
 matplotlib.use('Agg')
@@ -8,6 +9,27 @@ import numpy as np
 from langchain_core.tools import tool
 
 from . import validators as validate
+
+
+@tool
+def final_answer(status: Literal["success", "failed"], summary: str) -> str:
+    """Call this when the task is complete. Stops execution and reports outcome.
+
+    Args:
+        status: "success" if task completed, "failed" if unable to complete
+        summary: Brief plain-text summary of results or failure reason (no markdown)
+
+    Returns:
+        Confirmation of recorded outcome.
+    """
+    try:
+        if status not in ("success", "failed"):
+            raise ValueError(f"status must be 'success' or 'failed', got: {status}")
+        validate.non_empty(summary, "summary")
+    except ValueError as e:
+        return f"Error: {e}. Retry with valid parameters."
+
+    return f"{status}: {summary}"
 
 
 @tool

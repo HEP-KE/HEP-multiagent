@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from ..state import AgentState, Plan
 from ..features.report_generator import ReportData, ReportSection
+from ..features.issue_tracker import format_issues_for_report
 
 
 PROMPT = r"""Document execution of an agentic LLM system. Write LaTeX body content (no \documentclass or preamble).
@@ -46,6 +47,10 @@ Limitations: what the system could not do or verify.
 Gaps: what information is missing or uncertain.
 Failed steps: list specific failures and their impact on conclusions.
 
+\section{{Developer Notes}}
+REQUIRED SECTION - always include this.
+{worker_issues}
+
 ## Citation Guidelines
 CRITICAL: Cite papers using their arXiv ID in brackets exactly as shown in the Citations section.
 - CORRECT: "Dark matter detection methods vary [arXiv:1211.7222]"
@@ -76,7 +81,11 @@ async def synthesize(state: AgentState, llm: Any, report_writer, references, log
 
     cite_keys = _read_bib_keys(output_dir)
     execution_summary = _build_execution_summary(plan)
-    prompt = PROMPT.format(execution_summary=execution_summary, query=query, citations=cite_keys)
+    tool_issues = state.get("tool_issues", [])
+    worker_issues = format_issues_for_report(tool_issues)
+    if not worker_issues:
+        worker_issues = "No issues or recommendations reported by workers."
+    prompt = PROMPT.format(execution_summary=execution_summary, query=query, citations=cite_keys, worker_issues=worker_issues)
 
     if logger:
         logger.log("Synthesis", "Calling LLM for report generation...")
@@ -169,12 +178,17 @@ def _build_execution_summary(plan: Plan) -> str:
         icon, label = get_step_status(step)
         lines.append(f"### {icon} {label}: {step['name']} [{step['worker_type']}]")
         lines.append(f"Task: {step['description']}")
+        if step.get("output"):
+            lines.append(f"Output: {step['output']}")
         if step.get("solution"):
-            lines.append(f"Result: {step['solution'][:500]}")
+            lines.append(f"Result: {step['solution']}")
         if step.get("error"):
             lines.append(f"ERROR: {step['error']}")
         if step.get("artifacts"):
             lines.append(f"Files: {', '.join(step['artifacts'])}")
+        for attempt in step.get("attempts", []):
+            if attempt.get("thoughts"):
+                lines.append(f"Agent Reasoning: {attempt['thoughts']}")
         lines.append("")
     return "\n".join(lines)
 

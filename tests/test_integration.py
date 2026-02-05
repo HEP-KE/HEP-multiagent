@@ -145,7 +145,6 @@ def test_logger_writes_to_file(temp_output_dir):
     logger.init(temp_output_dir)
 
     logger.log("Test", "Test content")
-    logger.iteration(1, 5)
     logger.thought("Thinking about the problem...")
     logger.tool_call("test_tool", {"arg": "value"}, "result")
     logger.close()
@@ -157,7 +156,6 @@ def test_logger_writes_to_file(temp_output_dir):
         content = f.read()
 
     assert "Test content" in content
-    assert "1/5" in content
     assert "Thinking about" in content
     assert "test_tool" in content
 
@@ -540,7 +538,6 @@ def test_logger_captures_all_events(temp_output_dir):
     logger.log("Planner", "Creating plan...")
     logger.thought("Analyzing query...")
     logger.tool_call("search_arxiv", {"query": "dark matter"}, "Found 5 papers")
-    logger.iteration(1, 3)
     logger.close()
 
     log_path = os.path.join(temp_output_dir, "execution_log.md")
@@ -549,9 +546,8 @@ def test_logger_captures_all_events(temp_output_dir):
 
     assert "Supervisor" in content
     assert "Planner" in content
-    assert "[Thought]" in content
+    assert "Analyzing query" in content
     assert "search_arxiv" in content
-    assert "Iteration" in content
 
 
 def test_notebook_captures_code_cells(temp_output_dir):

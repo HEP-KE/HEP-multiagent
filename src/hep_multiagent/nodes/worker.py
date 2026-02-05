@@ -5,6 +5,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from ..config import WORKER_TOOLS
 from ..state import AgentState, get_dependency_context
 from ..worker import build_worker_prompt
+from ..features.agent_tools import final_answer
+from ..features.issue_tracker import log_issue
 from .. import worker_graph
 
 MAX_RETRIES = 2
@@ -32,7 +34,7 @@ async def execute(
     previous_attempts = step.get("attempts", [])
     research_context = plan.get("research_context")
 
-    worker_tools = list(tools)
+    worker_tools = list(tools) + [final_answer, log_issue]
     if step["worker_type"] in WORKER_TOOLS:
         worker_tools.extend(WORKER_TOOLS[step["worker_type"]]())
 
@@ -54,12 +56,12 @@ async def execute(
     if solution:
         output += f"\n\n## Answer\n{solution}"
 
-    # Check for explicit outcome markers in solution
-    check_text = (solution[:500] if solution else "").upper()
-    has_success = any(m in check_text for m in ["SUCCESS:", "COMPLETED:", "SUCCESSFULLY"])
-    has_failure = "FAILED:" in check_text
+    # Check for outcome from final_answer tool
+    has_success = solution and solution.startswith("success:")
+    has_failure = solution and solution.startswith("failed:")
 
-    attempt = {"output": output[:1000], "error": error, "tool_calls": result.get("tool_calls", [])}
+    thoughts = "\n".join(result.get("thoughts", []))
+    attempt = {"output": output, "error": error, "tool_calls": result.get("tool_calls", []), "thoughts": thoughts}
     attempts = previous_attempts + [attempt]
 
     if has_failure:
@@ -72,8 +74,8 @@ async def execute(
         status = "completed"
         error = None
     elif solution:
-        # No explicit marker - retry for clarification
-        error = "Unclear outcome. State SUCCESS: or FAILED: explicitly."
+        # No final_answer call - retry
+        error = "Call final_answer('success', summary) or final_answer('failed', reason) to complete."
         status = "ready" if len(attempts) < MAX_RETRIES else "failed"
     else:
         status = "failed"
@@ -82,11 +84,14 @@ async def execute(
     new_steps = _update_steps(plan, step_id, status, output, solution, result.get("artifacts", []), error, attempts)
 
     status_msg = "Completed" if status == "completed" else "Failed" if status == "failed" else "Retrying"
-    return {
+    updates = {
         "plan": {**plan, "steps": new_steps},
         "current_step_id": None,
         "messages": [AIMessage(content=f"{status_msg}: {step['name']}")],
     }
+    if result.get("tool_issues"):
+        updates["tool_issues"] = result["tool_issues"]
+    return updates
 
 
 def _update_steps(plan, step_id, status, output, solution, artifacts, error, attempts):

@@ -43,6 +43,7 @@ class AgentState(TypedDict, total=False):
     user_approved: Optional[bool]
     planning_feedback: Optional[str]
     output_dir: str
+    tool_issues: Annotated[List[str], add]
 
 
 def get_dependency_context(plan: Plan, step_id: str) -> tuple:

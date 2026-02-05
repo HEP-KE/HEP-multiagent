@@ -157,7 +157,7 @@ async def run_worker_async(
                 messages.append(ToolMessage(content=result_str, tool_call_id=tc["id"]))
                 if logger:
                     logger.tool_call(tc["name"], tc["args"], result_str)
-                if notebook:
+                if notebook and tc["name"] != "final_answer":
                     notebook.tool_call(tc["name"], tc["args"], result_str, worker_type)
         else:
             solution = response.content
