@@ -5,6 +5,7 @@ __pycache__/
 # output_*/
 .ipynb_checkpoints/
 TODO.md
+.env
 /data
 /tests/data/
 checkpoint*
