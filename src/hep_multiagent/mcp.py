@@ -16,9 +16,12 @@ class MCPManager:
 
     def _install(self, url: str) -> str:
         pkg = self._pkg_from_url(url)
+        install_url = url
+        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        if token and url.startswith("https://github.com"):
+            install_url = url.replace("https://github.com", f"https://{token}@github.com", 1)
         result = subprocess.run(
-            # [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "--force-reinstall", "mcp[cli]", f"git+{url}"],
-            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{url}"],
+            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{install_url}"],
             capture_output=True, text=True
         )
         if result.returncode != 0:
