@@ -16,16 +16,26 @@ class MCPManager:
 
     def _install(self, url: str) -> str:
         pkg = self._pkg_from_url(url)
-        install_url = url
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        if token and url.startswith("https://github.com"):
-            install_url = url.replace("https://github.com", f"https://{token}@github.com", 1)
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{install_url}"],
-            capture_output=True, text=True
-        )
+        if os.path.isdir(url):
+            # Local path: install in editable mode for development
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", "-e", url],
+                capture_output=True, text=True
+            )
+            label = url
+        else:
+            # Remote URL: install from git
+            install_url = url
+            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+            if token and url.startswith("https://github.com"):
+                install_url = url.replace("https://github.com", f"https://{token}@github.com", 1)
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{install_url}"],
+                capture_output=True, text=True
+            )
+            label = f"git+{url}"
         if result.returncode != 0:
-            raise RuntimeError(f"pip install git+{url} failed:\n{result.stderr}")
+            raise RuntimeError(f"pip install {label} failed:\n{result.stderr}")
         self._installed_pkgs.append(pkg)
         return pkg
 
