@@ -12,3 +12,4 @@ checkpoint*
 .DS_Store
 tests/.DS_Store
 src/hep_multiagent.egg-info/
+output_*
