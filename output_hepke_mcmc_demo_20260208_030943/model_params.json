@@ -1,0 +1,45 @@
+{
+  "z_eff": 1.48,
+  "k_grid": "theory_k_grid.npy (300 points, 1e-4 to 10 h/Mpc)",
+  "lcdm": {
+    "description": "Flat LCDM baseline with Planck 2018 best-fit",
+    "output": "mPk",
+    "P_k_max_h/Mpc": 20.0,
+    "z_pk": 1.48,
+    "h": 0.67556,
+    "Omega_b": 0.022032,
+    "Omega_cdm": 0.12038,
+    "A_s": 2.215e-09,
+    "n_s": 0.9619,
+    "Pk_file": "Pk_lcdm.npy"
+  },
+  "wcdm": {
+    "description": "wCDM with w0=-0.9, implemented via CLASS fluid dark energy",
+    "output": "mPk",
+    "P_k_max_h/Mpc": 20.0,
+    "z_pk": 1.48,
+    "h": 0.67556,
+    "Omega_b": 0.022032,
+    "Omega_cdm": 0.12038,
+    "A_s": 2.215e-09,
+    "n_s": 0.9619,
+    "w0": -0.9,
+    "Pk_file": "Pk_wcdm.npy"
+  },
+  "nu_mass": {
+    "description": "LCDM + massive neutrinos (sum_mnu=0.15 eV, 3 degenerate species)",
+    "output": "mPk",
+    "P_k_max_h/Mpc": 20.0,
+    "z_pk": 1.48,
+    "h": 0.67556,
+    "Omega_b": 0.022032,
+    "Omega_cdm": 0.12038,
+    "A_s": 2.215e-09,
+    "n_s": 0.9619,
+    "N_ur": 0.044,
+    "N_ncdm": 3,
+    "m_ncdm_eV": 0.05,
+    "sum_mnu_eV": 0.15,
+    "Pk_file": "Pk_nu_mass.npy"
+  }
+}

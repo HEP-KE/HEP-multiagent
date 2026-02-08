@@ -1,0 +1,14 @@
+{
+  "LCDM": {
+    "type": "primitive",
+    "value": "Pk_lcdm.npy"
+  },
+  "wCDM (w=-0.9)": {
+    "type": "primitive",
+    "value": "Pk_wcdm.npy"
+  },
+  "LCDM + massive neutrinos": {
+    "type": "primitive",
+    "value": "Pk_nu_mass.npy"
+  }
+}

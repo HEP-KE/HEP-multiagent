@@ -1,0 +1,30 @@
+{
+  "computation": "wCDM power spectrum",
+  "date": "2025-02-06",
+  "model_type": "wCDM (constant dark energy equation of state)",
+  "equation_of_state_parameter": "w0 = -0.9",
+  "k_grid": {
+    "type": "theory_k_grid",
+    "points": 300,
+    "range": "0.0001 to 10 h/Mpc",
+    "spacing": "logarithmic"
+  },
+  "output_files": {
+    "power_spectrum": "wcdm_power_spectrum.npy",
+    "parameters": "wcdm_params.json",
+    "k_grid": "theory_k_grid.npy"
+  },
+  "power_spectrum_range": {
+    "min_Pk": 0.0728,
+    "max_Pk": 167901.3,
+    "units": "(Mpc/h)^3"
+  },
+  "cosmological_parameters": {
+    "h": 0.67556,
+    "Omega_b": 0.022032,
+    "Omega_cdm": 0.12038,
+    "A_s": 2.215e-09,
+    "n_s": 0.9619
+  },
+  "notes": "Computed using CLASS cosmological code via compute_power_spectrum tool. wCDM model differs from LCDM by having constant dark energy equation of state w0 = -0.9 instead of w = -1."
+}

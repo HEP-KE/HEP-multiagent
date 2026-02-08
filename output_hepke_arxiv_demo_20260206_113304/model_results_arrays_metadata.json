@@ -1,0 +1,14 @@
+{
+  "\u039bCDM": {
+    "type": "primitive",
+    "value": "lcdm_power_spectrum.npy"
+  },
+  "wCDM": {
+    "type": "primitive",
+    "value": "wcdm_power_spectrum.npy"
+  },
+  "\u039bCDM+\u03bd": {
+    "type": "primitive",
+    "value": "lcdm_nu_mass_power_spectrum.npy"
+  }
+}

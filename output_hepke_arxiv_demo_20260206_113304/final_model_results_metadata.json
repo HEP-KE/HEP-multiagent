@@ -1,0 +1,14 @@
+{
+  "LCDM": {
+    "type": "primitive",
+    "value": "lcdm_power_spectrum"
+  },
+  "wCDM": {
+    "type": "primitive",
+    "value": "wcdm_power_spectrum"
+  },
+  "LCDM_nu": {
+    "type": "primitive",
+    "value": "lcdm_nu_mass_power_spectrum"
+  }
+}

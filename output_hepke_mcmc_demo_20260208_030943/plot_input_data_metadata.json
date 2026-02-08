@@ -1,0 +1,30 @@
+{
+  "k_theory_file": {
+    "type": "primitive",
+    "value": "theory_k_grid.npy"
+  },
+  "k_obs_file": {
+    "type": "primitive",
+    "value": "k_obs.npy"
+  },
+  "Pk_obs_file": {
+    "type": "primitive",
+    "value": "Pk_obs.npy"
+  },
+  "Pk_obs_err_file": {
+    "type": "primitive",
+    "value": "Pk_obs_err.npy"
+  },
+  "Pk_lcdm_file": {
+    "type": "primitive",
+    "value": "Pk_lcdm.npy"
+  },
+  "Pk_wcdm_file": {
+    "type": "primitive",
+    "value": "Pk_wcdm.npy"
+  },
+  "Pk_nu_mass_file": {
+    "type": "primitive",
+    "value": "Pk_nu_mass.npy"
+  }
+}
