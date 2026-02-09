@@ -3,6 +3,7 @@ hep-multiagent/
 .pytest_cache/
 __pycache__/
 # output_*/
+out*
 .ipynb_checkpoints/
 TODO.md
 .env

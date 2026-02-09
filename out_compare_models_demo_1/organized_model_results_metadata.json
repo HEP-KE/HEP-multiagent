@@ -1,0 +1,14 @@
+{
+  "LCDM": {
+    "type": "primitive",
+    "value": "model_results_LCDM.npy"
+  },
+  "wCDM": {
+    "type": "primitive",
+    "value": "model_results_wCDM.npy"
+  },
+  "LCDM_nu": {
+    "type": "primitive",
+    "value": "model_results_LCDM_nu.npy"
+  }
+}

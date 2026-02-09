@@ -1,0 +1,33 @@
+{
+  "k_statistics": {
+    "min": 0.2077419,
+    "max": 2.52076652,
+    "mean": 1.364254205,
+    "n_bins": 19,
+    "log_range": 1.084
+  },
+  "Pk_statistics": {
+    "min": 3.43644529,
+    "max": 803.70277637,
+    "mean": 89.4,
+    "dynamic_range": 233.8
+  },
+  "error_statistics": {
+    "min": 1.88995219,
+    "max": 263.21756669,
+    "mean": 27.7,
+    "relative_errors_percent": {
+      "min": 4.6,
+      "max": 267.9,
+      "mean": 31.0
+    }
+  },
+  "data_quality": {
+    "signal_to_noise_ratio": {
+      "min": 0.37,
+      "max": 21.8,
+      "mean": 3.2
+    },
+    "notes": "Large error bars at high k indicate increased uncertainty at smaller scales"
+  }
+}
