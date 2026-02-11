@@ -22,10 +22,12 @@ class Agent:
         llm: Any,
         mcp_servers: Union[str, List[str]] = None,
         approval: bool = False,
+        lesson_memory: bool = True,
     ):
         self.llm = llm
         self.mcp_servers = mcp_servers
         self.artifact_extensions = DEFAULT_EXTENSIONS
+        self._enable_lesson_memory = lesson_memory
 
         self.report = REPORTS["latex"]() if ACADEMIC_REPORT else None
         self.references = REFERENCES["bibtex"]() if ACADEMIC_REPORT else None
@@ -45,7 +47,10 @@ class Agent:
 
     async def _init(self):
         if self.mcp_servers:
-            await self._mcp.load(self.mcp_servers)
+            # Use default output dir for initial load; run() may reload with different dir
+            init_output_dir = os.path.abspath(DEFAULT_OUTPUT_DIR)
+            os.makedirs(init_output_dir, exist_ok=True)
+            await self._mcp.load(self.mcp_servers, output_dir=init_output_dir)
         return self
 
     @property
@@ -73,8 +78,9 @@ class Agent:
         if self.checkpoint is None:
             db_path = os.path.join(os.getcwd(), "checkpoint.db")
             self.checkpoint = SQLiteCheckpoint(db_path)
-            self.lesson_memory = LessonMemory(db_path)
-            await self.lesson_memory.init()
+            if self._enable_lesson_memory:
+                self.lesson_memory = LessonMemory(db_path)
+                await self.lesson_memory.init()
 
         if self.mcp_servers:
             self.logger.log("MCP", "Loading MCP servers...")
@@ -148,6 +154,7 @@ class Agent:
         finally:
             self.logger.close()
             self.notebook.close()
+            await self._mcp.close()
             self._mcp.uninstall()
 
         return result

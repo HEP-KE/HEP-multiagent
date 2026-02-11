@@ -169,4 +169,4 @@ def inspect_datafile(file_path: str) -> str:
 
 
 def get_compute_tools():
-    return [load_json, execute_python, inspect_datafile, save_json, cite, read_text_file]
+    return [load_json, inspect_datafile, save_json, cite, read_text_file]

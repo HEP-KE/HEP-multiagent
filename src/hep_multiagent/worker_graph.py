@@ -20,14 +20,14 @@ class WorkerState(TypedDict, total=False):
     tool_issues: Annotated[List[str], add]
 
 
-def call_model(state: WorkerState, model, logger=None) -> dict:
+async def call_model(state: WorkerState, model, logger=None) -> dict:
     iteration = state.get("iteration", 0)
     max_iter = state.get("max_iterations", 25)
 
     if iteration >= max_iter:
         return {"error": f"Max iterations ({max_iter}) reached"}
 
-    response = model.invoke(state.get("messages", []))
+    response = await model.ainvoke(state.get("messages", []))
 
     if logger and response.content:
         logger.thought(response.content)
@@ -45,9 +45,8 @@ def call_model(state: WorkerState, model, logger=None) -> dict:
     }
 
 
-def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=None, worker_type=None) -> dict:
+async def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=None, worker_type=None) -> dict:
     from .worker import extract_artifacts, normalize_tool_result
-    import asyncio
 
     pending = state.get("pending_tools", [])
     idx = state.get("tool_index", 0)
@@ -61,11 +60,7 @@ def execute_tool(state: WorkerState, tools, extensions, logger=None, notebook=No
     for tool in tools:
         if tool.name == name:
             try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-            try:
-                result = normalize_tool_result(loop.run_until_complete(tool.ainvoke(args)))
+                result = normalize_tool_result(await tool.ainvoke(args))
             except Exception as e:
                 result = (
                     f"ERROR: {type(e).__name__}: {e}\n\n"
@@ -107,9 +102,15 @@ def route(state: WorkerState) -> Literal["done", "model", "tool"]:
 def build(llm, tools, extensions, logger=None, notebook=None, worker_type=None):
     model = llm.bind_tools(tools)
 
+    async def model_node(s):
+        return await call_model(s, model, logger)
+
+    async def tool_node(s):
+        return await execute_tool(s, tools, extensions, logger, notebook, worker_type)
+
     graph = StateGraph(WorkerState)
-    graph.add_node("model", lambda s: call_model(s, model, logger))
-    graph.add_node("tool", lambda s: execute_tool(s, tools, extensions, logger, notebook, worker_type))
+    graph.add_node("model", model_node)
+    graph.add_node("tool", tool_node)
 
     graph.add_edge(START, "model")
     graph.add_conditional_edges("model", route, {"done": END, "model": "model", "tool": "tool"})
