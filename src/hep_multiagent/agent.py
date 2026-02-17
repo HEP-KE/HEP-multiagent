@@ -36,6 +36,7 @@ class Agent:
         set_code_approval(self.approval if approval else None)
 
         self.output_dir = None
+        self._init_output_dir = None
         self.logger = MarkdownLogger()
         self.notebook = ExecutionNotebook()
         self.lesson_memory = None
@@ -48,9 +49,9 @@ class Agent:
     async def _init(self):
         if self.mcp_servers:
             # Use default output dir for initial load; run() may reload with different dir
-            init_output_dir = os.path.abspath(DEFAULT_OUTPUT_DIR)
-            os.makedirs(init_output_dir, exist_ok=True)
-            await self._mcp.load(self.mcp_servers, output_dir=init_output_dir)
+            self._init_output_dir = os.path.abspath(DEFAULT_OUTPUT_DIR)
+            os.makedirs(self._init_output_dir, exist_ok=True)
+            await self._mcp.load(self.mcp_servers, output_dir=self._init_output_dir)
         return self
 
     @property
@@ -71,6 +72,14 @@ class Agent:
     async def run(self, query: str, output_dir: str = None, resume: bool = False) -> dict:
         self.output_dir = os.path.abspath(output_dir or DEFAULT_OUTPUT_DIR)
         os.makedirs(self.output_dir, exist_ok=True)
+
+        # Clean up default init dir if custom output_dir was specified
+        init_dir = getattr(self, '_init_output_dir', None)
+        if init_dir and init_dir != self.output_dir and os.path.isdir(init_dir):
+            try:
+                os.rmdir(init_dir)  # Only removes if empty
+            except OSError:
+                pass  # Not empty, leave it
 
         self.logger.init(self.output_dir)
         self.logger.log("Start", f"Query: {query[:100]}...")

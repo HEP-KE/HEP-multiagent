@@ -1,15 +1,15 @@
 from typing import Any, List
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from ..config import WORKER_TOOLS
 from ..state import AgentState, get_dependency_context
-from ..worker import build_worker_prompt
+from ..worker import build_worker_prompt, extract_artifacts, normalize_tool_result
 from ..features.agent_tools import final_answer
 from ..features.issue_tracker import log_issue
-from .. import worker_graph
 
 MAX_RETRIES = 2
+MAX_ITERATIONS = 15
 
 
 async def execute(
@@ -41,57 +41,84 @@ async def execute(
     prompt = workers.get(step["worker_type"], workers["data"])
     task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts, research_context, lessons)
 
-    graph = worker_graph.build(llm, worker_tools, artifact_extensions, logger, notebook, step["worker_type"])
+    model = llm.bind_tools(worker_tools)
+    messages = [SystemMessage(content=prompt), HumanMessage(content=task)]
+    output_parts, tool_calls_made, new_artifacts = [], [], list(artifacts)
+    solution, error = "", None
 
-    result = await graph.ainvoke({
-        "messages": [SystemMessage(content=prompt), HumanMessage(content=task)],
-        "iteration": 0,
-        "max_iterations": 25,
-        "artifacts": list(artifacts),
-    })
+    for iteration in range(MAX_ITERATIONS):
+        try:
+            response = await model.ainvoke(messages)
+        except Exception as e:
+            error = f"Model error: {e}"
+            break
 
-    solution = result.get("solution", "")
-    error = result.get("error")
-    output = "\n\n".join(result.get("outputs", []))
+        messages.append(response)
+        if logger and response.content:
+            logger.thought(response.content)
+
+        if not response.tool_calls:
+            solution = response.content or ""
+            break
+
+        for tc in response.tool_calls:
+            name, args, tc_id = tc["name"], tc["args"], tc["id"]
+
+            if name == "final_answer":
+                solution = f"{args.get('outcome', 'success')}: {args.get('message', '')}"
+                messages.append(ToolMessage(content=solution, tool_call_id=tc_id))
+                break
+
+            tool_fn = next((t for t in worker_tools if t.name == name), None)
+            if not tool_fn:
+                result_str = f"Tool '{name}' not found"
+            else:
+                try:
+                    result = await tool_fn.ainvoke(args)
+                except NotImplementedError:
+                    result = tool_fn.invoke(args)
+                except Exception as e:
+                    result = f"ERROR: {e}\n\nAnalyze this error and retry with corrected parameters."
+                result_str = normalize_tool_result(result)
+
+            tool_calls_made.append(name)
+            output_parts.append(f"[{name}]: {result_str[:500]}")
+            new_artifacts.extend(extract_artifacts(result_str, artifact_extensions))
+            messages.append(ToolMessage(content=result_str, tool_call_id=tc_id))
+
+            if logger:
+                logger.tool_call(name, args, result_str)
+            if notebook and name not in ("final_answer", "log_issue"):
+                notebook.tool_call(name, args, result_str, step["worker_type"])
+
+        if solution:
+            break
+
+    output = "\n\n".join(output_parts)
     if solution:
         output += f"\n\n## Answer\n{solution}"
 
-    # Check for outcome from final_answer tool
-    has_success = solution and solution.startswith("success:")
-    has_failure = solution and solution.startswith("failed:")
-
-    thoughts = "\n".join(result.get("thoughts", []))
-    attempt = {"output": output, "error": error, "tool_calls": result.get("tool_calls", []), "thoughts": thoughts}
+    has_success = solution.startswith("success:")
+    has_failure = solution.startswith("failed:")
+    attempt = {"output": output, "error": error, "tool_calls": tool_calls_made}
     attempts = previous_attempts + [attempt]
 
     if has_failure:
-        # Explicit failure - accept it
-        status = "failed"
-        error = solution.strip()
-        solution = ""
+        status, error, solution = "failed", solution.strip(), ""
     elif has_success:
-        # Explicit success - mark completed
-        status = "completed"
-        error = None
+        status, error = "completed", None
     elif solution:
-        # No final_answer call - retry
         error = "Call final_answer('success', summary) or final_answer('failed', reason) to complete."
         status = "ready" if len(attempts) < MAX_RETRIES else "failed"
     else:
-        status = "failed"
-        error = error or "No solution produced"
+        status, error = "failed", error or "No solution produced"
 
-    new_steps = _update_steps(plan, step_id, status, output, solution, result.get("artifacts", []), error, attempts)
-
-    status_msg = "Completed" if status == "completed" else "Failed" if status == "failed" else "Retrying"
-    updates = {
+    new_steps = _update_steps(plan, step_id, status, output, solution, new_artifacts, error, attempts)
+    return {
         "plan": {**plan, "steps": new_steps},
         "current_step_id": None,
-        "messages": [AIMessage(content=f"{status_msg}: {step['name']}")],
+        "messages": [AIMessage(content=f"{'Completed' if status == 'completed' else 'Failed' if status == 'failed' else 'Retrying'}: {step['name']}")],
     }
-    if result.get("tool_issues"):
-        updates["tool_issues"] = result["tool_issues"]
-    return updates
 
 
 def _update_steps(plan, step_id, status, output, solution, artifacts, error, attempts):
