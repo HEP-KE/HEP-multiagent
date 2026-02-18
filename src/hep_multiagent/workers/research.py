@@ -1,7 +1,6 @@
 from langchain_core.tools import tool
 
 from ..features import validators as validate
-from ..features.agent_tools import save_json
 
 
 PROMPT = """You are a research worker. Your job: search arxiv, get paper metadata, cite papers.
@@ -37,7 +36,7 @@ Call log_issue(component, problem, suggestion) when you:
 - Encounter a tool failure or unexpected result
 - Notice an opportunity for a new tool that would help
 
-REQUIRED: final_answer("success", "brief result") or final_answer("failed", "reason")"""
+REQUIRED: final_answer must include ALL outputs produced (paper IDs, citation keys, file paths) so downstream workers can use them."""
 
 
 @tool
@@ -219,5 +218,4 @@ def get_research_tools():
         download_arxiv_full_text,
         read_arxiv_chunk,
         cite,
-        save_json,
     ]

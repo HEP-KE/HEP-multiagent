@@ -56,9 +56,22 @@ class MarkdownLogger:
     def log(self, node: str, content: str) -> None:
         self._write_line(content, node)
 
+    def thinking(self) -> None:
+        """Log that we're waiting for LLM response."""
+        self._write_line("[Thinking...]")
+
+    def iteration(self, current: int, total: int) -> None:
+        """Log iteration progress."""
+        self._write_line(f"[Iteration {current}/{total}]")
+
     def thought(self, content: str) -> None:
         if content:
             self._write_line(f"[Thought] {content}")
+
+    def tool_start(self, name: str, args: dict) -> None:
+        """Log tool call BEFORE execution so we can see what's running."""
+        args_str = ", ".join(f"{k}={repr(v)[:50]}" for k, v in args.items())
+        self._write_line(f"[Running] {name}({args_str})...")
 
     def tool_call(self, name: str, args: dict, result: str) -> None:
         args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())

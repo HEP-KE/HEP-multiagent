@@ -47,6 +47,8 @@ async def execute(
     solution, error = "", None
 
     for iteration in range(MAX_ITERATIONS):
+        if logger:
+            logger.thinking()
         try:
             response = await model.ainvoke(messages)
         except Exception as e:
@@ -65,7 +67,7 @@ async def execute(
             name, args, tc_id = tc["name"], tc["args"], tc["id"]
 
             if name == "final_answer":
-                solution = f"{args.get('outcome', 'success')}: {args.get('message', '')}"
+                solution = f"{args.get('status', 'success')}: {args.get('summary', '')}"
                 messages.append(ToolMessage(content=solution, tool_call_id=tc_id))
                 break
 
@@ -73,6 +75,8 @@ async def execute(
             if not tool_fn:
                 result_str = f"Tool '{name}' not found"
             else:
+                if logger:
+                    logger.tool_start(name, args)
                 try:
                     result = await tool_fn.ainvoke(args)
                 except NotImplementedError:

@@ -4,7 +4,6 @@ import contextlib
 from langchain_core.tools import tool
 
 from ..features import validators as validate
-from ..features.agent_tools import load_json, save_json
 from .research import cite, read_arxiv_chunk as read_text_file
 
 _code_approval = None
@@ -50,7 +49,7 @@ Call log_issue(component, problem, suggestion) when you:
 - Write code because no tool exists for the operation
 - Notice an opportunity for a new tool that would help
 
-REQUIRED: final_answer("success", "brief result") or final_answer("failed", "reason")"""
+REQUIRED: final_answer must include ALL outputs produced (file paths, dataset names, computed values) so downstream workers can use them."""
 
 
 from ..config import SANDBOX_ALLOWED_IMPORTS
@@ -169,4 +168,4 @@ def inspect_datafile(file_path: str) -> str:
 
 
 def get_compute_tools():
-    return [load_json, inspect_datafile, save_json, cite, read_text_file]
+    return [inspect_datafile, cite, read_text_file]

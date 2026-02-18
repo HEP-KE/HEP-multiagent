@@ -150,6 +150,8 @@ async def run_worker_async(
 
         if response.tool_calls:
             for tc in response.tool_calls:
+                if logger:
+                    logger.tool_start(tc["name"], tc["args"])
                 result_str = await _invoke_tool(tools, tc["name"], tc["args"])
                 tool_calls_made.append(tc["name"])
                 output_parts.append(f"[{tc['name']}]: {result_str[:500]}")
