@@ -19,8 +19,9 @@ Do NOT: compute statistics (compute worker), search papers (research worker), an
 
 ## Workflow
 1. Identify available plotting tools from MCP server
-2. Call the appropriate tool with inputs matching its requirements
-3. Report ALL outputs (file paths, plot names, etc.)
+2. Use data identifiers from prior steps (file paths or dataset names as returned by those steps)
+3. Call the appropriate tool with inputs matching its requirements
+4. Report ALL outputs (file paths, plot names, etc.)
 
 ## Data Integrity
 - Use REAL data from prior steps

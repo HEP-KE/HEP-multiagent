@@ -27,7 +27,7 @@ PROMPT = """You are a compute worker. Your job: load data, filter, transform, co
 - If a tool can do it, use the tool. Do not reimplement in Python.
 
 ## Your Role (stay in scope)
-- Load/inspect data files
+- Load/inspect data (use identifiers from prior steps - could be file paths or dataset names)
 - Filter and transform data
 - Compute statistics
 - Save results
