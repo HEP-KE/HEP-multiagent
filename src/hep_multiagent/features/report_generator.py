@@ -42,7 +42,7 @@ class LaTeXReport:
         return pdf_path
 
     def _cleanup_aux_files(self, output_dir: str) -> None:
-        for ext in [".tex", ".log", ".aux", ".blg", ".bbl", ".out"]:
+        for ext in [".log", ".aux", ".blg", ".bbl", ".out"]:
             path = os.path.join(output_dir, f"report{ext}")
             if os.path.exists(path):
                 os.remove(path)
@@ -145,4 +145,3 @@ class LaTeXReport:
             if logger:
                 logger.log("LaTeX Error", "pdflatex not found - install LaTeX")
             return False
-
