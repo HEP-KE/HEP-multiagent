@@ -17,3 +17,4 @@ src/hep_multiagent.egg-info/
 output_*
 note.md
 argo_test.py
+*env/

@@ -55,40 +55,9 @@ async def synthesize(state: AgentState, llm: Any, report_writer, references, log
         references.load(output_dir)
 
     cite_keys = _read_bib_keys(output_dir) if has_academic_report else "No papers available to cite."
-    response_format = (
-        r"Write LaTeX body content (no \documentclass or preamble)."
-        if has_academic_report
-        else "Write plain text or Markdown. Do not use LaTeX."
-    )
+    response_format = "Write plain text or Markdown. Do not use LaTeX."
     report_structure = (
-        r"""\section{{Answer}}
-\textbf{{\textcolor{{blue}}{{Direct answer to the user's query here.}}}}
-State the answer immediately. If the system could not answer, state that directly.
-
-\section{{Execution Log}}
-For each step document which worker/node executed it, which tools or MCP servers were invoked.
-Include the LLM's observations, adjustments, workarounds, retries at each step.
-Note failures, errors, and gaps \textbf{{inline where they occurred}} - be specific, not verbose.
-Write: "The data worker queried...", "The compute worker encountered error X when..."
-Do NOT invent explanations for failures.
-
-\section{{Results}}
-Attribute each result to the component that produced it.
-Integrate figures with academic captions: \begin{{figure}}[h]\centering\includegraphics{{...}}\caption{{Descriptive caption.}}\end{{figure}}
-Do NOT include raw data dumps.
-Include helpful tables. For wide tables, wrap with: \fitbox{{\begin{{tabular}}{{...}}...\end{{tabular}}}}
-
-\section{{Discussion}}
-\textbf{{Physical Plausibility:}} Validate results against known physics. Flag any values that seem unphysical (e.g., P(k)=0 at k>0.1 h/Mpc is wrong, negative masses, ratios >10x expected).
-Key takeaways - be opinionated based on evidence.
-Limitations: what the system could not do or verify.
-Gaps: what information is missing or uncertain.
-Failed steps: list specific failures and their impact on conclusions.
-
-\section{{Developer Notes}}
-REQUIRED SECTION - always include this."""
-        if has_academic_report
-        else """## Answer
+        """## Answer
 State the answer immediately. If the system could not answer, state that directly.
 
 ## Execution Log
@@ -106,11 +75,7 @@ Validate physical plausibility, limitations, missing information, and failed ste
 ## Developer Notes
 REQUIRED SECTION - always include this."""
     )
-    value_format = (
-        r"\textbf{{\textcolor{{blue}}{{value with units}}}}"
-        if has_academic_report
-        else "value with units"
-    )
+    value_format = "value with units"
     execution_summary = _build_execution_summary(plan)
     tool_issues = state.get("tool_issues", [])
     worker_issues = format_issues_for_report(tool_issues)
@@ -141,7 +106,49 @@ REQUIRED SECTION - always include this."""
         if logger:
             logger.log("Synthesis", "LLM response received, generating PDF...")
 
-        sections = [ReportSection(title="Report", content=content)]
+        latex_prompt = PROMPT.format(
+            response_format=r"Write LaTeX body content (no \documentclass or preamble).",
+            execution_summary=execution_summary,
+            query=query,
+            citations=cite_keys,
+            report_structure=r"""\section{{Answer}}
+\textbf{{\textcolor{{blue}}{{Direct answer to the user's query here.}}}}
+State the answer immediately. If the system could not answer, state that directly.
+
+\section{{Execution Log}}
+For each step document which worker/node executed it, which tools or MCP servers were invoked.
+Include the LLM's observations, adjustments, workarounds, retries at each step.
+Note failures, errors, and gaps \textbf{{inline where they occurred}} - be specific, not verbose.
+Write: "The data worker queried...", "The compute worker encountered error X when..."
+Do NOT invent explanations for failures.
+
+\section{{Results}}
+Attribute each result to the component that produced it.
+Integrate figures with academic captions: \begin{{figure}}[h]\centering\includegraphics{{...}}\caption{{Descriptive caption.}}\end{{figure}}
+Do NOT include raw data dumps.
+Include helpful tables. For wide tables, wrap with: \fitbox{{\begin{{tabular}}{{...}}...\end{{tabular}}}}
+
+\section{{Discussion}}
+\textbf{{Physical Plausibility:}} Validate results against known physics. Flag any values that seem unphysical (e.g., P(k)=0 at k>0.1 h/Mpc is wrong, negative masses, ratios >10x expected).
+Key takeaways - be opinionated based on evidence.
+Limitations: what the system could not do or verify.
+Gaps: what information is missing or uncertain.
+Failed steps: list specific failures and their impact on conclusions.
+
+\section{{Developer Notes}}
+REQUIRED SECTION - always include this.""",
+            worker_issues=worker_issues,
+            value_format=r"\textbf{{\textcolor{{blue}}{{value with units}}}}",
+        )
+        latex_content = content
+        try:
+            latex_response = await llm.ainvoke([HumanMessage(content=latex_prompt)])
+            latex_content = latex_response.content
+        except Exception as e:
+            if logger:
+                logger.log("Synthesis", f"LaTeX report generation failed: {e}, using plain response")
+
+        sections = [ReportSection(title="Report", content=latex_content)]
         figures = _collect_figures(plan)
         data = ReportData(
             title=plan["goal"],
@@ -152,6 +159,11 @@ REQUIRED SECTION - always include this."""
 
         references.export(output_dir)
         report_writer.generate(data, output_dir, logger)
+
+    if os.path.isdir(output_dir):
+        files = sorted(os.listdir(output_dir))
+        if files:
+            content += "\n\nOutput Files:\n" + "\n".join(f"- {os.path.join(os.path.basename(output_dir), f)}" for f in files)
 
     if logger:
         logger.log("Synthesis", "Report complete")

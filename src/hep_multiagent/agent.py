@@ -9,7 +9,7 @@ from .config import (
     ACADEMIC_REPORT, DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
     REPORTS, REFERENCES, SQLiteCheckpoint, APPROVAL, ExecutionNotebook,
 )
-from .workers.compute import set_code_approval
+from .workers.compute import set_code_approval, set_output_dir
 from .features.lesson_memory import LessonMemory
 from .graph import build_graph
 from .features.agent_trace import MarkdownLogger
@@ -72,6 +72,7 @@ class Agent:
     async def run(self, query: str, output_dir: str = None, resume: bool = False) -> dict:
         self.output_dir = os.path.abspath(output_dir or DEFAULT_OUTPUT_DIR)
         os.makedirs(self.output_dir, exist_ok=True)
+        set_output_dir(self.output_dir)
 
         # Clean up default init dir if custom output_dir was specified
         init_dir = getattr(self, '_init_output_dir', None)

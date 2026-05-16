@@ -1,3 +1,4 @@
+import os
 import io
 import contextlib
 
@@ -7,11 +8,17 @@ from ..features import validators as validate
 from .research import cite, read_arxiv_chunk as read_text_file
 
 _code_approval = None
+_output_dir = None
 
 
 def set_code_approval(approval):
     global _code_approval
     _code_approval = approval
+
+
+def set_output_dir(output_dir):
+    global _output_dir
+    _output_dir = output_dir
 
 
 PROMPT = """You are a compute worker. Your job: load data, filter, transform, compute statistics.
@@ -42,6 +49,8 @@ If task involves reading paper content:
 ## Data Integrity
 - Use REAL data from files or prior step outputs
 - NEVER create mock/synthetic data unless explicitly requested
+- If results are large or tabular, save them as a CSV in the output directory and pass the file path downstream instead of pasting the data into text
+- Keep small scalar results in the text answer
 
 ## Report Issues
 Call log_issue(component, problem, suggestion) when you:
@@ -167,5 +176,49 @@ def inspect_datafile(file_path: str) -> str:
         return f"Failed to inspect file: {e}"
 
 
+@tool
+def write_csv_file(filename: str, csv_content: str) -> str:
+    """Write CSV content to a file in the current output directory.
+
+    Args:
+        filename: CSV filename to create
+        csv_content: Full CSV text including header row
+
+    Returns:
+        Saved file path, or error message if failed.
+    """
+    try:
+        validate.non_empty(filename, "filename")
+        validate.non_empty(csv_content, "csv_content")
+        validate.extension(filename, [".csv"])
+        if not _output_dir:
+            return "Error: Output directory not set"
+        file_path = os.path.join(_output_dir, os.path.basename(filename))
+        with open(file_path, "w") as f:
+            f.write(csv_content)
+        return f"Saved CSV to {file_path}"
+    except ValueError as e:
+        return str(e)
+    except Exception as e:
+        return f"Failed to write CSV: {e}"
+
+
+@tool
+def list_output_files() -> str:
+    """List files in the current output directory.
+
+    Returns:
+        List of files in the output directory, or error if unavailable.
+    """
+    if not _output_dir:
+        return "Error: Output directory not set"
+    if not os.path.isdir(_output_dir):
+        return f"Error: Output directory not found: {_output_dir}"
+    files = sorted(os.listdir(_output_dir))
+    if not files:
+        return f"Output directory {_output_dir} is empty."
+    return "\n".join(os.path.join(_output_dir, name) for name in files)
+
+
 def get_compute_tools():
-    return [inspect_datafile, cite, read_text_file]
+    return [inspect_datafile, write_csv_file, list_output_files, cite, read_text_file]

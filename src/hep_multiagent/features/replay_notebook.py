@@ -72,7 +72,8 @@ class ExecutionNotebook:
                                for i in sorted(self._imports))
             cells.append(self._cell(imports))
         if self._output_dir:
-            setup = f'OUTPUT_DIR = {self._output_dir!r}\nREPLAY_DIR = OUTPUT_DIR + "_replay"\nos.makedirs(REPLAY_DIR, exist_ok=True)'
+            self._imports.add("hep_multiagent.workers.compute import set_output_dir")
+            setup = f'OUTPUT_DIR = {self._output_dir!r}\nREPLAY_DIR = OUTPUT_DIR + "_replay"\nos.makedirs(REPLAY_DIR, exist_ok=True)\nset_output_dir(REPLAY_DIR)'
             cells.append(self._cell(setup))
         cells.extend(self._cells)
         nb = {

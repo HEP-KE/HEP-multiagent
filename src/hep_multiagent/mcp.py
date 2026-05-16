@@ -1,64 +1,28 @@
 import os
-import subprocess
-import sys
+from pathlib import Path
 from typing import Any, Dict, List
 
+from .mcp_env import ensure_mcp_environment, command_path
 
 class MCPManager:
     def __init__(self):
         self._client = None
         self._tools = []
         self._tool_sources = {}
-        self._installed_pkgs = []
         self._session = None
         self._session_ctx = None
         self._initialized = False
         self._output_dir = None
 
-    def _pkg_from_url(self, url: str) -> str:
-        return url.rstrip("/").rstrip(".git").split("/")[-1].replace("-", "_")
-
-    def _install(self, url: str) -> str:
-        pkg = self._pkg_from_url(url)
-        if os.path.isdir(url):
-            # Local path: install in editable mode for development
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", "-e", url],
-                capture_output=True, text=True
-            )
-            label = url
-        else:
-            # Remote URL: install from git
-            install_url = url
-            token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-            if token and url.startswith("https://github.com"):
-                install_url = url.replace("https://github.com", f"https://{token}@github.com", 1)
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "mcp[cli]", f"git+{install_url}"],
-                capture_output=True, text=True
-            )
-            label = f"git+{url}"
-        if result.returncode != 0:
-            raise RuntimeError(f"pip install {label} failed:\n{result.stderr}")
-        self._installed_pkgs.append(pkg)
-        return pkg
-
     def uninstall(self) -> None:
-        for pkg in self._installed_pkgs:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "uninstall", "-y", pkg],
-                capture_output=True, text=True
-            )
-        self._installed_pkgs = []
+        pass
 
     async def load(self, servers: List[Dict[str, Any]], output_dir: str = None) -> List:
         output_dir = os.path.abspath(output_dir) if output_dir else None
 
-        # If already initialized with same output_dir, return cached tools
         if self._initialized and self._output_dir == output_dir:
             return self._tools
 
-        # If output_dir changed, close existing session first
         if self._initialized and self._output_dir != output_dir:
             await self.close()
 
@@ -75,10 +39,16 @@ class MCPManager:
             if "url" not in server:
                 raise ValueError("MCP server config must include 'url'")
             url = server["url"]
-            pkg = self._install(url)
-            name = server.get("name", pkg)
-            venv_bin = os.path.join(sys.prefix, "bin", name)
-            cmd = venv_bin if os.path.exists(venv_bin) else name
+            name = server.get("name") or url.rstrip("/").rstrip(".git").split("/")[-1]
+            try:
+                env_dir, pkg = ensure_mcp_environment(name, url)
+            except Exception as e:
+                raise RuntimeError(f"Failed to set up MCP '{name}'. Check its url and dependencies. {e}") from e
+            command_name = server.get("command", name)
+            cmd = str(command_path(Path(env_dir), command_name))
+            if not os.path.exists(cmd):
+                fallback = str(command_path(Path(env_dir), pkg))
+                cmd = fallback if os.path.exists(fallback) else command_name
             config[name] = {
                 "transport": "stdio",
                 "command": cmd,
@@ -89,7 +59,6 @@ class MCPManager:
 
         self._client = MultiServerMCPClient(config)
         try:
-            # Use persistent session for tool calls to share state
             server_name = next(iter(config))
             self._session_ctx = self._client.session(server_name)
             self._session = await self._session_ctx.__aenter__()

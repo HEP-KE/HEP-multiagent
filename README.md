@@ -19,21 +19,16 @@ llm = ChatOpenAI(
 )
 
 async def main():
-    # Create agent with MCP server (auto-installs from URL)
     agent = await Agent(
         llm=llm,
         mcp_servers=[{"url": "https://github.com/HEP-KE/mcp-ke.git"}],
         approval=True,
     )
 
-    # Run query
     result = await agent.run(
         query="What is the mass distribution of halos at z=0?",
         output_dir="./output_run_001",
     )
-
-    # Resume interrupted run
-    result = await agent.run(query, output_dir="./output", resume=True)
 
 asyncio.run(main())
 ```
@@ -222,9 +217,28 @@ src/hep_multiagent/
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `llm` | Any | required | LangChain LLM instance |
-| `mcp_servers` | List[dict] | `None` | MCP servers with `url`, optional `env`/`args` |
+| `mcp_servers` | List[dict] | `None` | MCP servers with `url`, optional `name`/`command`/`env`/`args` |
 | `approval` | bool | `False` | Human-in-the-loop plan approval |
 
+## MCP Quick Start
+
+Use just `url` for most MCPs:
+
+```python
+mcp_servers=[{"url": "https://github.com/HEP-KE/mcp-ke.git"}]
+```
+
+Optional fields:
+
+```python
+mcp_servers=[{
+    "url": "https://github.com/HEP-KE/mcp-ke.git",
+    "name": "mcp-ke",
+    "command": "mcp-ke",
+    "env": {"API_KEY": "..."},
+    "args": ["--verbose"],
+}]
+```
 
 ## MCP Tool Development
 
@@ -268,8 +282,9 @@ agent = await Agent(
     llm=llm,
     mcp_servers=[{
         "url": "https://github.com/HEP-KE/mcp-ke.git",
+        "name": "mcp-ke",
         "env": {"LLM_API_KEY": "...", "LLM_URL": "..."},
-        "args": ["--verbose"],  # optional CLI args
+        "args": ["--verbose"],
     }]
 )
 ```

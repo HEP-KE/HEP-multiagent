@@ -37,6 +37,7 @@ class LaTeXReport:
 
         pdf_path = tex_path.replace(".tex", ".pdf")
         if os.path.exists(pdf_path):
+            os.remove(tex_path)
             self._cleanup_aux_files(output_dir)
 
         return pdf_path
