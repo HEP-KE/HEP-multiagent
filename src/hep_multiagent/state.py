@@ -24,6 +24,8 @@ class PlanStep(TypedDict):
     artifacts: List[str]
     error: Optional[str]
     attempts: List[StepAttempt]
+    final_answer_produced: bool
+    structured_output: Optional[dict]
 
 
 class Plan(TypedDict, total=False):

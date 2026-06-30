@@ -4,6 +4,11 @@ import re
 from . import validators as validate
 
 
+def _arxiv():
+    import arxiv
+    return arxiv
+
+
 def normalize_arxiv_id(arxiv_id: str) -> str:
     s = arxiv_id.strip()
     s = re.sub(r'^https?://(www\.)?arxiv\.org/(abs|pdf)/', '', s)
@@ -14,7 +19,7 @@ def normalize_arxiv_id(arxiv_id: str) -> str:
 
 
 def fetch_metadata(arxiv_id: str) -> dict:
-    import arxiv
+    arxiv = _arxiv()
     clean_id = normalize_arxiv_id(arxiv_id)
     try:
         paper = next(arxiv.Client().results(arxiv.Search(id_list=[clean_id])), None)
@@ -33,7 +38,7 @@ def fetch_metadata(arxiv_id: str) -> dict:
 
 
 def search(query: str, max_results: int = 5) -> list:
-    import arxiv
+    arxiv = _arxiv()
     client = arxiv.Client()
     results = client.results(arxiv.Search(query=query, max_results=max_results))
     papers = []

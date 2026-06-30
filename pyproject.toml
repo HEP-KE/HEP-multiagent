@@ -7,11 +7,9 @@ name = "hep-multiagent"
 version = "0.1.0"
 description = "Domain-agnostic multi-agent framework for scientific research queries"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
@@ -30,6 +28,7 @@ dependencies = [
     "pandas>=1.3",
     "scipy>=1.10",
     "python-dotenv>=1.0",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

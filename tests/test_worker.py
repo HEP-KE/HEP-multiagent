@@ -1,6 +1,5 @@
 from hep_multiagent.worker import (
     build_worker_prompt,
-    build_worker_result,
     extract_artifacts,
     normalize_tool_result,
 )
@@ -34,33 +33,6 @@ def test_build_worker_prompt_with_previous_attempts():
     assert "# Previous Attempts" in result
     assert "connection failed" in result
     assert "try a different approach" in result.lower()
-
-
-def test_build_worker_result_basic():
-    result = build_worker_result([], "", [], None, [])
-    assert result["output"] == ""
-    assert result["solution"] == ""
-    assert result["artifacts"] == []
-    assert result["error"] is None
-
-
-def test_build_worker_result_with_solution():
-    result = build_worker_result(["[tool]: output"], "final answer", [], None, ["tool"])
-    assert "[tool]: output" in result["output"]
-    assert "## Answer" in result["output"]
-    assert "final answer" in result["output"]
-    assert result["solution"] == "final answer"
-
-
-def test_build_worker_result_dedupes_artifacts():
-    result = build_worker_result([], "", ["a.csv", "b.csv", "a.csv"], None, [])
-    assert len(result["artifacts"]) == 2
-
-
-def test_build_worker_result_attempt_truncates():
-    long_output = ["x" * 2000]
-    result = build_worker_result(long_output, "", [], None, [])
-    assert len(result["attempt"]["output"]) <= 1000
 
 
 def test_extract_artifacts_finds_files():

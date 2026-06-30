@@ -1,4 +1,4 @@
-from hep_multiagent.graph import _format_plan_log, _supervisor_reason, _log_lessons_recalled, _log_lesson_saved
+from hep_multiagent.graph import _format_plan_log, _log_lessons_recalled, _log_lesson_saved
 
 
 def test_format_plan_log_basic():
@@ -35,53 +35,6 @@ def test_format_plan_log_full_description():
     }
     result = _format_plan_log(plan)
     assert "x" * 300 in result
-
-
-def test_supervisor_reason_plan_no_plan():
-    result = _supervisor_reason({}, None, "plan")
-    assert "No plan exists" in result
-
-
-def test_supervisor_reason_plan_rejected():
-    state = {"user_approved": False, "planning_feedback": "needs more detail"}
-    result = _supervisor_reason(state, None, "plan")
-    assert "rejected" in result
-    assert "needs more detail" in result
-
-
-def test_supervisor_reason_await_approval():
-    result = _supervisor_reason({}, None, "await_approval")
-    assert "awaiting" in result.lower()
-
-
-def test_supervisor_reason_synthesize_no_plan():
-    result = _supervisor_reason({}, None, "synthesize")
-    assert "No plan" in result
-
-
-def test_supervisor_reason_synthesize_with_stats():
-    plan = {
-        "steps": [
-            {"status": "completed"},
-            {"status": "completed"},
-            {"status": "failed"},
-        ]
-    }
-    result = _supervisor_reason({}, plan, "synthesize")
-    assert "2 completed" in result
-    assert "1 failed" in result
-
-
-def test_supervisor_reason_execute():
-    plan = {
-        "steps": [
-            {"name": "Ready Step", "status": "ready"},
-            {"name": "Pending Step", "status": "pending"},
-        ]
-    }
-    result = _supervisor_reason({}, plan, "execute")
-    assert "Ready Step" in result
-    assert "Pending Step" not in result
 
 
 class MockLogger:

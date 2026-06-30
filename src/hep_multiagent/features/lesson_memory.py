@@ -13,15 +13,6 @@ async def learn(memory, worker_type: str, status: str, error: str, task: str = "
         await memory.save(worker_type, lesson)
 
 
-async def recall_and_learn(memory, worker_type: str, status: str = None, error: str = None) -> str:
-    """Recall past lessons. If status='failed', also saves error as new lesson."""
-    if not memory or not worker_type:
-        return ""
-    if status == "failed" and error:
-        await memory.save(worker_type, error[:350])
-    return await memory.get(worker_type)
-
-
 class LessonMemory:
     def __init__(self, db_path: str = "checkpoint.db"):
         self._db = db_path

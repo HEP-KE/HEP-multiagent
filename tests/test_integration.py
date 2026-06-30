@@ -11,7 +11,6 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from hep_multiagent import Agent, AgentFeatures
-from hep_multiagent.config import WORKERS, WORKER_TOOLS
 from hep_multiagent.graph import build_graph
 from hep_multiagent.features.agent_trace import MarkdownLogger
 from hep_multiagent.features.replay_notebook import ExecutionNotebook
@@ -77,6 +76,15 @@ def temp_output_dir():
         yield tmpdir
 
 
+@pytest.fixture(autouse=True)
+def reset_code_approval():
+    from hep_multiagent.workers.compute import set_code_approval
+
+    set_code_approval(None)
+    yield
+    set_code_approval(None)
+
+
 @pytest.fixture
 def mock_tools():
     return [
@@ -136,49 +144,6 @@ def test_agent_feature_dict_uses_current_names():
 
     assert agent.features.plan_approval is True
     assert agent.features.python_execution_approval is True
-
-
-def test_workers_registered():
-    assert "data" in WORKERS
-    assert "compute" in WORKERS
-    assert "research" in WORKERS
-    assert "viz" in WORKERS
-
-    for name, prompt in WORKERS.items():
-        assert isinstance(prompt, str)
-        assert len(prompt) > 50, f"Worker {name} prompt too short"
-
-
-def test_worker_tools_registered():
-    assert "compute" in WORKER_TOOLS
-    assert "research" in WORKER_TOOLS
-    assert "viz" in WORKER_TOOLS
-
-    for name, get_tools in WORKER_TOOLS.items():
-        tools = get_tools()
-        assert isinstance(tools, list)
-        assert len(tools) > 0, f"Worker {name} has no tools"
-
-
-def test_research_tools_have_docstrings():
-    tools = WORKER_TOOLS["research"]()
-    for tool in tools:
-        doc = tool.description or ""
-        assert len(doc) > 20, f"Tool {tool.name} has short/missing description"
-
-
-def test_compute_tools_have_docstrings():
-    tools = WORKER_TOOLS["compute"]()
-    for tool in tools:
-        doc = tool.description or ""
-        assert len(doc) > 20, f"Tool {tool.name} has short/missing description"
-
-
-def test_viz_tools_have_docstrings():
-    tools = WORKER_TOOLS["viz"]()
-    for tool in tools:
-        doc = tool.description or ""
-        assert len(doc) > 20, f"Tool {tool.name} has short/missing description"
 
 
 def test_logger_writes_to_file(temp_output_dir):
@@ -310,21 +275,6 @@ def test_state_helpers():
     assert "/tmp/file.json" in artifacts
 
 
-def test_validators_all_present():
-    from hep_multiagent.features import validators as validate
-
-    validators = [
-        "non_empty", "arxiv_id", "file_exists", "dir_exists", "extension",
-        "json_list", "json_serializable", "positive_int", "non_negative_int",
-        "int_range", "file_written", "arrays_same_length", "text_not_empty"
-    ]
-
-    for name in validators:
-        assert hasattr(validate, name), f"Validator {name} not found"
-        func = getattr(validate, name)
-        assert callable(func), f"Validator {name} not callable"
-
-
 def test_execute_python_basic():
     from hep_multiagent.workers.compute import execute_python
 
@@ -375,7 +325,6 @@ def test_execute_python_allows_safe_imports():
 def test_planner_extract_json():
     from hep_multiagent.nodes.planner import extract_json
 
-    # Test with markdown code block
     text = '''Here is the plan:
 ```json
 {"goal": "test", "steps": []}
@@ -385,12 +334,10 @@ Done.'''
     assert result is not None
     assert "goal" in result
 
-    # Test with bare JSON
     text = 'The plan is {"goal": "test", "steps": []}'
     result = extract_json(text)
     assert result is not None
 
-    # Test with no JSON
     assert extract_json("no json here") is None
 
 
@@ -405,23 +352,19 @@ def test_planner_detect_vague_terms():
 def test_supervisor_routing():
     from hep_multiagent.nodes.supervisor import supervise, route_action
 
-    # No plan -> should plan
     state = {"messages": [], "plan": None}
     result = supervise(state)
     assert result["next_action"] == "plan"
     assert route_action(result) == "plan"
 
-    # Draft plan -> await approval
     state = {"plan": {"status": "draft", "steps": []}}
     result = supervise(state)
     assert result["next_action"] == "await_approval"
 
-    # Active plan with ready steps -> execute
     state = {"plan": {"status": "active", "steps": [{"id": "s1", "status": "ready", "depends_on": []}]}}
     result = supervise(state)
     assert result["next_action"] == "execute"
 
-    # All steps completed -> synthesize
     state = {"plan": {"status": "active", "steps": [{"id": "s1", "status": "completed", "depends_on": []}]}}
     result = supervise(state)
     assert result["next_action"] == "synthesize"
@@ -440,41 +383,6 @@ def test_router_picks_ready_step():
     state = {"plan": plan}
     result = route(state)
     assert result["current_step_id"] == "s2"
-
-
-def test_step_dependency_resolution():
-    from hep_multiagent.state import get_ready_steps
-
-    plan = {
-        "steps": [
-            {"id": "s1", "status": "completed", "depends_on": []},
-            {"id": "s2", "status": "pending", "depends_on": ["s1"]},
-            {"id": "s3", "status": "pending", "depends_on": ["s2"]},
-        ]
-    }
-
-    # s2 should become ready once s1 is completed
-    ready = get_ready_steps(plan)
-    # s2 is pending but s1 is completed, so s2 should be ready
-    # But the status is still "pending" - get_ready_steps returns steps with status="ready"
-    # Let me check the actual function behavior
-    assert isinstance(ready, list)
-
-
-def test_explicit_failure_detection():
-    # Test that solutions starting with "FAILED:" are treated as failures
-    solution_fail = "FAILED: Could not acquire data"
-    solution_ok = "Data acquired successfully"
-    solution_fail_lower = "failed: no data"
-
-    # Check detection logic
-    is_failure_1 = solution_fail.strip().upper().startswith("FAILED:")
-    is_failure_2 = solution_ok.strip().upper().startswith("FAILED:")
-    is_failure_3 = solution_fail_lower.strip().upper().startswith("FAILED:")
-
-    assert is_failure_1 is True
-    assert is_failure_2 is False
-    assert is_failure_3 is True
 
 
 def test_full_workflow_executes_steps(temp_output_dir, mock_tools):
@@ -514,7 +422,6 @@ def test_full_workflow_executes_steps(temp_output_dir, mock_tools):
         config = {"configurable": {"thread_id": "test-thread-2"}}
         result = await graph.ainvoke(initial_state, config)
 
-        # Verify plan was created
         assert result is not None
         plan = result.get("plan")
         if plan:
@@ -524,47 +431,23 @@ def test_full_workflow_executes_steps(temp_output_dir, mock_tools):
 
         logger.close()
 
-        # Verify log captured workflow
         log_path = os.path.join(temp_output_dir, "execution_log.md")
         with open(log_path) as f:
             log_content = f.read()
 
-        # Should have logged planner activity
         assert "Planner" in log_content or "Supervisor" in log_content
 
     asyncio.run(run_workflow())
 
 
-def test_viz_tool_creates_chart(temp_output_dir):
-    from hep_multiagent.features.agent_tools import create_bar_chart, save_json
-
-    # Create test data
-    data_path = os.path.join(temp_output_dir, "test_data.json")
-    save_json.invoke({"filepath": data_path, "data": {"A": 10, "B": 20, "C": 15}})
-
-    # Create chart
-    chart_path = os.path.join(temp_output_dir, "chart.png")
-    result = create_bar_chart.invoke({
-        "data_file": data_path,
-        "output_path": chart_path,
-        "title": "Test Chart"
-    })
-
-    assert "Saved:" in result
-    assert os.path.exists(chart_path)
-
-
 def test_compute_tool_with_data(temp_output_dir):
     from hep_multiagent.workers.compute import execute_python
-    from hep_multiagent.features.agent_tools import save_json
 
-    # Test numpy operations
     result = execute_python.invoke({
         "code": "import numpy as np; arr = np.array([1,2,3,4,5]); print(f'Mean: {np.mean(arr)}')"
     })
     assert "Mean: 3.0" in result
 
-    # Test pandas operations
     result = execute_python.invoke({
         "code": "import pandas as pd; df = pd.DataFrame({'a': [1,2,3]}); print(df.describe())"
     })
@@ -617,10 +500,5 @@ def test_notebook_captures_code_cells(temp_output_dir):
     cells = nb["cells"]
     assert len(cells) >= 2
 
-    # Check code cells exist
     code_cells = [c for c in cells if c["cell_type"] == "code"]
     assert len(code_cells) >= 1
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

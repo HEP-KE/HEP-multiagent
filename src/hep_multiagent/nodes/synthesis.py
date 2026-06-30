@@ -38,7 +38,7 @@ CRITICAL: Cite papers using their arXiv ID in brackets exactly as shown in the C
 """
 
 
-async def synthesize(state: AgentState, llm: Any, report_writer, references, logger=None) -> dict:
+async def synthesize(state: AgentState, llm: Any, report_writer, references, logger=None, diagnostics=None) -> dict:
     plan = state.get("plan")
     if not plan:
         return {"final_report": "No plan created.", "next_action": "end"}
@@ -96,7 +96,11 @@ REQUIRED SECTION - always include this."""
         logger.log("Synthesis", "Calling LLM for report generation...")
 
     try:
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        messages = [HumanMessage(content=prompt)]
+        if diagnostics:
+            response = await diagnostics.record_llm_call("synthesis", "final_report", llm, messages, "not_applicable", lambda: llm.ainvoke(messages))
+        else:
+            response = await llm.ainvoke(messages)
         content = response.content
     except Exception as e:
         if logger:
@@ -143,11 +147,17 @@ REQUIRED SECTION - always include this.""",
         )
         latex_content = content
         try:
-            latex_response = await llm.ainvoke([HumanMessage(content=latex_prompt)])
+            latex_messages = [HumanMessage(content=latex_prompt)]
+            if diagnostics:
+                latex_response = await diagnostics.record_llm_call("synthesis", "latex_report", llm, latex_messages, "not_applicable", lambda: llm.ainvoke(latex_messages))
+            else:
+                latex_response = await llm.ainvoke(latex_messages)
             latex_content = latex_response.content
         except Exception as e:
             if logger:
                 logger.log("Synthesis", f"LaTeX report generation failed: {e}, using plain response")
+            if diagnostics:
+                diagnostics.failure("report_generation_failure", "synthesis", None, f"LaTeX report generation failed: {e}", False, "latex_report_failed")
 
         sections = [ReportSection(title="Report", content=latex_content)]
         figures = _collect_figures(plan)

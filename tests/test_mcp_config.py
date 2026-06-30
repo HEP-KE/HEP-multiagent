@@ -16,6 +16,7 @@ def test_remote_url_defaults_to_streamable_http():
     }
     assert sources == {
         "hep-tools": {
+            "name": "hep-tools",
             "url": "http://localhost:8000/mcp",
             "transport": "streamable_http",
         }

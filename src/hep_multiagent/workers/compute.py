@@ -61,7 +61,11 @@ Call log_issue(component, problem, suggestion) when you:
 REQUIRED: final_answer must include ALL outputs produced (file paths, dataset names, computed values) so downstream workers can use them."""
 
 
-from ..config import SANDBOX_ALLOWED_IMPORTS
+SANDBOX_ALLOWED_IMPORTS = {
+    'numpy', 'pandas', 'matplotlib', 'scipy', 'sklearn',
+    'json', 'math', 'statistics', 'collections', 'itertools', 'functools',
+    'datetime', 'time', 're', 'csv', 'h5py', 'astropy', 'healpy',
+}
 
 
 def _check_imports(code: str) -> str | None:

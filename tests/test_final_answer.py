@@ -1,6 +1,4 @@
-"""Tests for final_answer tool and outcome parsing."""
-
-from hep_multiagent.features.agent_tools import final_answer
+from hep_multiagent.features.agent_tools import final_answer, structured_final_answer
 
 
 def test_success():
@@ -25,16 +23,25 @@ def test_invalid_status_returns_error():
     assert "Retry" in result
 
 
-def test_outcome_parsing():
-    """Test that nodes/worker.py correctly parses final_answer output."""
-    def check_outcome(solution):
-        solution_lower = (solution or "").lower()
-        has_success = solution_lower.startswith("success:")
-        has_failure = solution_lower.startswith("failed:")
-        return has_success, has_failure
+def test_structured_final_answer_success():
+    result = structured_final_answer.invoke({
+        "status": "success",
+        "summary": "Task completed",
+        "artifacts": ["outputs/result.csv"],
+        "observations": ["Rows counted: 10"],
+        "limitations": [],
+    })
+    assert result["status"] == "success"
+    assert result["summary"] == "Task completed"
+    assert result["artifacts"] == ["outputs/result.csv"]
 
-    assert check_outcome("success: done") == (True, False)
-    assert check_outcome("failed: error") == (False, True)
-    assert check_outcome("other text") == (False, False)
-    assert check_outcome("") == (False, False)
-    assert check_outcome(None) == (False, False)
+
+def test_structured_final_answer_validates_lists():
+    result = structured_final_answer.invoke({
+        "status": "success",
+        "summary": "Task completed",
+        "artifacts": "outputs/result.csv",
+        "observations": [],
+        "limitations": [],
+    })
+    assert "error" in result

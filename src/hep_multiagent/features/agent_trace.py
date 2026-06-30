@@ -9,7 +9,6 @@ class MarkdownLogger:
         self._start = None
         self._current_node = None
         self._wrap_width = wrap_width
-        self._indent = 23  # 14 (node) + 1 (space) + 8 (time)
 
     def init(self, output_dir: str) -> None:
         path = os.path.join(output_dir, "execution_log.md")
@@ -27,7 +26,6 @@ class MarkdownLogger:
         return f"+{mins:02d}:{secs:02d}"
 
     def _wrap_text(self, text: str) -> list:
-        """Wrap text to fit in the details column."""
         lines = []
         for paragraph in text.split('\n'):
             if not paragraph.strip():
@@ -57,11 +55,9 @@ class MarkdownLogger:
         self._write_line(content, node)
 
     def thinking(self) -> None:
-        """Log that we're waiting for LLM response."""
         self._write_line("[Thinking...]")
 
     def iteration(self, current: int, total: int) -> None:
-        """Log iteration progress."""
         self._write_line(f"[Iteration {current}/{total}]")
 
     def thought(self, content: str) -> None:
@@ -69,7 +65,6 @@ class MarkdownLogger:
             self._write_line(f"[Thought] {content}")
 
     def tool_start(self, name: str, args: dict) -> None:
-        """Log tool call BEFORE execution so we can see what's running."""
         args_str = ", ".join(f"{k}={repr(v)[:50]}" for k, v in args.items())
         self._write_line(f"[Running] {name}({args_str})...")
 

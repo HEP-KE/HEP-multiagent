@@ -11,3 +11,7 @@ class AgentFeatures:
     execution_log: bool = True
     replay_notebook: bool = True
     issue_tracking: bool = True
+    run_diagnostics: bool = True
+    structured_worker_output: bool = False
+    run_local_tool_prototyping: bool = False
+    role_prompts: bool = True

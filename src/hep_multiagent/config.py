@@ -1,11 +1,3 @@
-ACADEMIC_REPORT = True
-
-SANDBOX_ALLOWED_IMPORTS = {
-    'numpy', 'pandas', 'matplotlib', 'scipy', 'sklearn',
-    'json', 'math', 'statistics', 'collections', 'itertools', 'functools',
-    'datetime', 'time', 're', 'csv', 'h5py', 'astropy', 'healpy',
-}
-
 DEFAULT_EXTENSIONS = [".hdf5", ".h5", ".fits", ".csv", ".png", ".pdf", ".jpg", ".txt"]
 DEFAULT_OUTPUT_DIR = "./output"
 
@@ -34,16 +26,6 @@ CONSULTANTS = {
     "arxiv": arxiv,
     "data": data_consultant,
     "file": file_consultant,
-}
-
-from .nodes import planner, synthesis, supervisor, router, worker as worker_node
-
-NODES = {
-    "planner": planner,
-    "synthesis": synthesis,
-    "supervisor": supervisor,
-    "router": router,
-    "worker": worker_node,
 }
 
 from .features.report_generator import LaTeXReport

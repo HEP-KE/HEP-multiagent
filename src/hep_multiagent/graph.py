@@ -1,9 +1,10 @@
+from contextlib import nullcontext
 from typing import Any, List, Callable
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import RetryPolicy
 
-from .state import AgentState
+from .state import AgentState, get_dependency_context
 from .config import WORKERS, get_worker_docs
 from .nodes import planner, synthesis, supervisor, router, worker
 from .features.lesson_memory import LessonMemory, recall, learn
@@ -11,27 +12,6 @@ from .features.lesson_memory import LessonMemory, recall, learn
 
 LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=1.0, backoff_factor=2.0, jitter=True)
 MCP_RETRY = RetryPolicy(max_attempts=5, initial_interval=2.0, backoff_factor=2.0, max_interval=60.0, jitter=True)
-
-
-def _supervisor_reason(state, plan, action):
-    if action == "plan":
-        if state.get("user_approved") is False:
-            return f"User rejected plan. Feedback: {state.get('planning_feedback', 'none')}"
-        return "No plan exists yet"
-    if action == "await_approval":
-        return "Plan is draft, awaiting user approval"
-    if action == "synthesize":
-        if not plan:
-            return "No plan to execute"
-        completed = sum(1 for s in plan.get("steps", []) if s["status"] == "completed")
-        failed = sum(1 for s in plan.get("steps", []) if s["status"] == "failed")
-        return f"Plan finished: {completed} completed, {failed} failed"
-    if action == "execute":
-        ready = [s["name"] for s in plan.get("steps", []) if s["status"] == "ready"]
-        return f"Ready steps: {', '.join(ready)}"
-    return ""
-
-
 
 
 def _log_lessons_recalled(logger, worker_type: str, lessons: str):
@@ -67,13 +47,20 @@ def build_graph(
     notebook: Any = None,
     lesson_memory: LessonMemory = None,
     issue_tracking: bool = True,
+    structured_worker_output: bool = False,
+    run_local_tool_prototyping: bool = False,
+    role_prompts: bool = True,
+    diagnostics: Any = None,
 ):
     async def worker_node(s):
-        from .state import get_dependency_context
         plan = s.get("plan")
         step_id = s.get("current_step_id")
         step = next((st for st in plan["steps"] if st["id"] == step_id), None) if plan and step_id else None
         worker_type = step["worker_type"] if step else None
+        agent_name = f"{worker_type}_worker" if worker_type else "worker"
+        if diagnostics and step:
+            diagnostics.validate_dependency_order(plan, step_id)
+            diagnostics.event(agent_name, "started", f"Executing step {step_id}: {step['name']}")
         if logger and step:
             context, artifacts = get_dependency_context(plan, step_id)
             node_name = f"{step['worker_type'].title()} Worker: {step['name']}"
@@ -86,18 +73,23 @@ def build_graph(
         lessons = await recall(lesson_memory, worker_type)
         if logger and worker_type:
             _log_lessons_recalled(logger, worker_type, lessons)
-        result = await worker.execute(
-            s,
-            llm,
-            tools,
-            WORKERS,
-            artifact_extensions,
-            get_output_dir(),
-            logger,
-            notebook,
-            lessons,
-            issue_tracking=issue_tracking,
-        )
+        with diagnostics.agent_timer(agent_name) if diagnostics else nullcontext():
+            result = await worker.execute(
+                s,
+                llm,
+                tools,
+                WORKERS,
+                artifact_extensions,
+                get_output_dir(),
+                logger,
+                notebook,
+                lessons,
+                issue_tracking=issue_tracking,
+                structured_worker_output=structured_worker_output,
+                run_local_tool_prototyping=run_local_tool_prototyping,
+                role_prompts=role_prompts,
+                diagnostics=diagnostics,
+            )
         updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
         task = step["description"] if step else ""
         status = updated_step.get("status")
@@ -114,9 +106,14 @@ def build_graph(
                 outcome += f"\nFiles: {', '.join(updated_step['artifacts'])}"
             node_name = f"{step['worker_type'].title()} Worker: {step['name']}"
             logger.log(node_name, outcome)
+        if diagnostics and step:
+            diagnostics.finish_agent_step(agent_name, status or "failed", updated_step.get("artifacts", []), bool(updated_step.get("final_answer_produced")))
+            diagnostics.event(agent_name, "completed" if status == "completed" else "failed", f"Step {step_id} ended with status {status}")
         return result
 
     async def planner_node(s):
+        if diagnostics:
+            diagnostics.event("planner", "started", "Creating execution plan")
         if logger:
             inputs = ["Creating execution plan"]
             query = ""
@@ -129,16 +126,26 @@ def build_graph(
             if s.get("planning_feedback"):
                 inputs.append(f"Feedback: {s['planning_feedback']}")
             logger.log("Planner", "\n".join(inputs))
-        result = await planner.plan(s, llm, tools, get_worker_docs(), logger)
+        with diagnostics.agent_timer("planner") if diagnostics else nullcontext():
+            worker_docs = get_worker_docs() if role_prompts else ", ".join(WORKERS)
+            result = await planner.plan(s, llm, tools, worker_docs, logger, diagnostics, role_prompts)
         if logger:
             plan = result.get("plan")
             if plan:
                 logger.log("Planner", _format_plan_log(plan))
             elif result.get("error"):
                 logger.log("Planner", f"Failed: {result['error']}")
+        if diagnostics:
+            if result.get("plan"):
+                diagnostics.validate_plan(result["plan"], list(WORKERS))
+                diagnostics.event("planner", "completed", f"Created {len(result['plan'].get('steps', []))}-step plan")
+            else:
+                diagnostics.event("planner", "failed", result.get("error", "Planner failed"))
         return result
 
     async def synthesis_node(s):
+        if diagnostics:
+            diagnostics.event("synthesis", "started", "Generating final report")
         if logger:
             plan = s.get("plan", {})
             steps = plan.get("steps", [])
@@ -154,10 +161,16 @@ def build_graph(
             if artifacts:
                 inputs.append(f"Artifacts: {', '.join(artifacts)}")
             logger.log("Synthesis", "\n".join(inputs))
-        return await synthesis.synthesize(s, llm, report_writer, references, logger)
+        with diagnostics.agent_timer("synthesis") if diagnostics else nullcontext():
+            result = await synthesis.synthesize(s, llm, report_writer, references, logger, diagnostics)
+        if diagnostics:
+            diagnostics.event("synthesis", "completed", "Final report generated")
+        return result
 
     def supervisor_node(s):
         result = supervisor.supervise(s)
+        if diagnostics:
+            diagnostics.event("supervisor", "decision", result.get("next_action", "unknown"))
         if logger:
             action = result.get("next_action", "unknown")
             plan = s.get("plan")
@@ -173,7 +186,7 @@ def build_graph(
                         mark = "[-]"
                     elif status == "ready":
                         mark = "[>]"
-                    else:  # pending
+                    else:
                         mark = "[ ]"
                     lines.append(f"  {mark} {step['name']}")
                 logger.log("Supervisor", "\n".join(lines))
@@ -183,6 +196,9 @@ def build_graph(
 
     def router_node(s):
         result = router.route(s)
+        if diagnostics:
+            step_id = result.get("current_step_id")
+            diagnostics.event("router", "routed", f"Current step: {step_id}" if step_id else "No runnable step")
         if logger:
             step_id = result.get("current_step_id")
             plan = result.get("plan") or s.get("plan")
@@ -195,10 +211,10 @@ def build_graph(
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", supervisor_node)
-    graph.add_node("planner", planner_node, retry=LLM_RETRY)
+    graph.add_node("planner", planner_node, retry_policy=LLM_RETRY)
     graph.add_node("router", router_node)
-    graph.add_node("worker", worker_node, retry=MCP_RETRY)
-    graph.add_node("synthesis", synthesis_node, retry=LLM_RETRY)
+    graph.add_node("worker", worker_node, retry_policy=MCP_RETRY)
+    graph.add_node("synthesis", synthesis_node, retry_policy=LLM_RETRY)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges("supervisor", supervisor.route_action, {

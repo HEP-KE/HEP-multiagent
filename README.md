@@ -15,6 +15,8 @@ The package is intentionally an orchestrator, not an MCP server process manager.
 ## Install
 
 ```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
@@ -112,6 +114,7 @@ Each run writes to `output_dir`:
 |------|---------|
 | `execution_log.md` | Planner, worker, and tool-call trace |
 | `execution.ipynb` | Replay-oriented notebook for generated code and artifacts |
+| `run_diagnostics.json` | Run configuration, timeline, LLM/tool calls, checks, failures, and metrics |
 | `references.bib` | BibTeX entries collected through citation tools |
 | `report.tex` / `report.pdf` | Final report when LaTeX generation is enabled |
 
@@ -131,6 +134,10 @@ features = AgentFeatures(
     execution_log=True,
     replay_notebook=True,
     issue_tracking=True,
+    run_diagnostics=True,
+    structured_worker_output=False,
+    run_local_tool_prototyping=False,
+    role_prompts=True,
 )
 
 agent = await Agent(llm=llm, mcp_servers=mcp_servers, features=features)
@@ -152,6 +159,14 @@ agent = await Agent(llm=llm, features={"lesson_memory": False, "replay_notebook"
 | `execution_log` | `True` | Write `execution_log.md` |
 | `replay_notebook` | `True` | Write `execution.ipynb` |
 | `issue_tracking` | `True` | Give workers the `log_issue` diagnostic tool |
+| `run_diagnostics` | `True` | Write `run_diagnostics.json` for run comparison and troubleshooting |
+| `structured_worker_output` | `False` | Require workers to finish with structured artifacts, observations, and limitations |
+| `run_local_tool_prototyping` | `False` | Let compute workers create temporary helper tools inside `output_dir/run_local_tools` |
+| `role_prompts` | `True` | Use the built-in planner and worker role prompts |
+
+`run_diagnostics.json` is local and deterministic. It records system behavior, not scientific correctness: run configuration, model name, token counts from `tiktoken:cl100k_base`, graph events, worker/tool activity, recovered and unrecovered failures, and checks such as invalid plans, unknown tools, missing artifacts, unsupported citations, and omitted failed steps.
+
+Run-local tool prototyping does not modify repository code or MCP servers. It exposes `create_run_local_tool` and `run_local_tool` only for the current run, so experiments can measure whether temporary helper code improves or disrupts the workflow.
 
 ## Architecture
 
@@ -174,13 +189,85 @@ flowchart LR
 ## Development
 
 ```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
 ```
 
-Run MCP endpoint tests only when a server is available:
+## Run Sequence
 
-```bash
-export HEP_MCP_SERVER_URL=http://localhost:8000/mcp
-pytest tests/test_mcp_smoke.py
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant A as Agent
+    participant M as MCPManager
+    participant G as LangGraph
+    participant P as Planner
+    participant C as Consultants
+    participant S as Supervisor
+    participant R as Router
+    participant W as Worker
+    participant T as Tools/MCP
+    participant Y as Synthesis
+    participant D as Diagnostics
+    participant O as Output files
+
+    U->>A: run(query, output_dir)
+    A->>O: create output_dir
+    A->>D: start run record
+    A->>M: load configured MCP endpoints
+    M->>T: get tool schemas
+    T-->>M: available tools
+    M-->>A: tools + source metadata
+    A->>G: build graph with features, tools, artifacts, diagnostics
+
+    G->>S: inspect state
+    S-->>G: next_action = plan
+    G->>P: create plan
+    P->>C: optional arxiv/file/data consultation
+    C->>T: call available tools when needed
+    T-->>C: observations
+    C-->>P: planning context
+    P-->>G: draft plan
+    G->>D: record planner LLM call and plan checks
+
+    alt plan_approval enabled
+        G-->>A: await approval
+        A->>U: show proposed plan
+        U-->>A: approve or feedback
+        A->>G: approval update
+    end
+
+    loop until plan complete, failed, or stuck
+        G->>S: inspect plan status
+        S-->>G: next_action = execute
+        G->>R: select ready step
+        R-->>G: current_step_id
+        G->>W: execute assigned worker step
+        W->>D: record worker start, tools available, dependency check
+        W->>T: call MCP, built-in, or run-local tools
+        T-->>W: tool result or error
+        W->>D: record LLM/tool calls, failures, recovery signals
+        opt run_local_tool_prototyping enabled
+            W->>O: create helper under output_dir/run_local_tools
+            W->>T: run helper function
+        end
+        alt structured_worker_output enabled
+            W-->>G: status, summary, artifacts, observations, limitations
+        else default completion
+            W-->>G: status and summary
+        end
+        G->>O: update log/notebook/artifacts
+        G->>D: record step outcome
+    end
+
+    G->>Y: synthesize final answer
+    Y->>O: write report/references when enabled
+    Y-->>G: final_report
+    G-->>A: final state
+    A->>D: finalize checks and metrics
+    D->>O: write run_diagnostics.json
+    A-->>U: return result
 ```

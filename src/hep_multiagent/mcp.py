@@ -38,7 +38,7 @@ def build_mcp_client_config(servers: Any) -> Tuple[Dict[str, Dict[str, Any]], Di
         for key in ("headers", "timeout", "session_kwargs"):
             if key in server:
                 config[name][key] = server[key]
-        sources[name] = {"url": url, "transport": transport}
+        sources[name] = {"name": name, "url": url, "transport": transport}
 
     return config, sources
 

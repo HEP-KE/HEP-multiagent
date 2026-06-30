@@ -49,13 +49,11 @@ def web_search(query: str) -> str:
     Returns:
         Search results as text. Use arxiv IDs found here with other tools.
     """
-    # Input validation
     try:
         validate.non_empty(query, "query")
     except ValueError as e:
         return str(e)
 
-    # Tool logic
     try:
         from langchain_community.tools import DuckDuckGoSearchRun
         return DuckDuckGoSearchRun().run(query)
