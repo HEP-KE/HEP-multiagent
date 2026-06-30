@@ -1,7 +1,7 @@
 import os
 import hashlib
 import uuid
-from typing import Any, List, Union
+from typing import Any, Dict, List, Union
 
 from langchain_core.messages import HumanMessage
 
@@ -20,7 +20,7 @@ class Agent:
     def __init__(
         self,
         llm: Any,
-        mcp_servers: Union[str, List[str]] = None,
+        mcp_servers: Union[str, List[Dict[str, Any]]] = None,
         approval: bool = False,
         lesson_memory: bool = True,
     ):
@@ -36,7 +36,6 @@ class Agent:
         set_code_approval(self.approval if approval else None)
 
         self.output_dir = None
-        self._init_output_dir = None
         self.logger = MarkdownLogger()
         self.notebook = ExecutionNotebook()
         self.lesson_memory = None
@@ -48,10 +47,7 @@ class Agent:
 
     async def _init(self):
         if self.mcp_servers:
-            # Use default output dir for initial load; run() may reload with different dir
-            self._init_output_dir = os.path.abspath(DEFAULT_OUTPUT_DIR)
-            os.makedirs(self._init_output_dir, exist_ok=True)
-            await self._mcp.load(self.mcp_servers, output_dir=self._init_output_dir)
+            await self._mcp.load(self.mcp_servers)
         return self
 
     @property
@@ -74,14 +70,6 @@ class Agent:
         os.makedirs(self.output_dir, exist_ok=True)
         set_output_dir(self.output_dir)
 
-        # Clean up default init dir if custom output_dir was specified
-        init_dir = getattr(self, '_init_output_dir', None)
-        if init_dir and init_dir != self.output_dir and os.path.isdir(init_dir):
-            try:
-                os.rmdir(init_dir)  # Only removes if empty
-            except OSError:
-                pass  # Not empty, leave it
-
         self.logger.init(self.output_dir)
         self.logger.log("Start", f"Query: {query[:100]}...")
 
@@ -94,7 +82,7 @@ class Agent:
 
         if self.mcp_servers:
             self.logger.log("MCP", "Loading MCP servers...")
-            await self._mcp.load(self.mcp_servers, output_dir=self.output_dir)
+            await self._mcp.load(self.mcp_servers)
             self.logger.log("MCP", f"Loaded {len(self._mcp.tools)} tools")
         self.notebook.init(self.output_dir, self._mcp.tool_sources, self.logger)
         thread_id = self._get_thread_id(query, resume)
@@ -165,6 +153,5 @@ class Agent:
             self.logger.close()
             self.notebook.close()
             await self._mcp.close()
-            self._mcp.uninstall()
 
         return result

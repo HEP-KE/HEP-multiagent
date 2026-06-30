@@ -1,20 +1,32 @@
-.venv/
-hep-multiagent/
-.pytest_cache/
+# Python
 __pycache__/
-# output_*/
-out*
-.ipynb_checkpoints/
-TODO.md
-.env
-/data
-/tests/data/
-checkpoint*
-/tests/output*
-.DS_Store
-tests/.DS_Store
-src/hep_multiagent.egg-info/
-output_*
-note.md
-argo_test.py
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
 *env/
+
+# Local configuration
+.env
+.DS_Store
+
+# Generated run artifacts
+checkpoint*
+output_*/
+out*/
+report.pdf
+report.tex
+references.bib
+execution.ipynb
+execution_log.md
+
+# Notebook metadata
+.ipynb_checkpoints/

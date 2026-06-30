@@ -10,7 +10,6 @@ class ExecutionNotebook:
         self._output_dir = None
         self._cells = []
         self._imports = set()
-        self._pip_urls = set()
         self._tool_sources = {}
         self._logger = None
 
@@ -19,7 +18,6 @@ class ExecutionNotebook:
         self._path = Path(output_dir) / "execution.ipynb"
         self._output_dir = str(Path(output_dir).resolve())
         self._imports = {"numpy as np", "pandas as pd", "matplotlib.pyplot as plt", "os"}
-        self._pip_urls = set()
         self._tool_sources = tool_sources or {}
         self._cells = []
         self._save()
@@ -39,11 +37,9 @@ class ExecutionNotebook:
                 code = code.replace(self._output_dir, '" + REPLAY_DIR + "')
             source = code
         elif name in self._tool_sources:
-            src = self._tool_sources[name]
-            self._pip_urls.add(src["url"])
-            self._imports.add(f"{src['pkg']} import {name}")
             args_str = ", ".join(self._format_arg(k, v) for k, v in args.items())
-            source = f"{name}({args_str})"
+            url = self._tool_sources[name]["url"]
+            source = f"# MCP tool call on {url}\n# {name}({args_str})"
         elif name in WORKER_EXPORTS:
             self._imports.add(f"hep_multiagent.workers import {name}")
             args_str = ", ".join(self._format_arg(k, v) for k, v in args.items())
@@ -64,9 +60,6 @@ class ExecutionNotebook:
 
     def _save(self) -> None:
         cells = []
-        if self._pip_urls:
-            pips = "\n".join(f"!pip install -q git+{u}" for u in sorted(self._pip_urls))
-            cells.append(self._cell(pips))
         if self._imports:
             imports = "\n".join(f"from {i}" if " import " in i else f"import {i}"
                                for i in sorted(self._imports))

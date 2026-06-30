@@ -1,93 +1,84 @@
-import os
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+from urllib.parse import urlparse
 
-from .mcp_env import ensure_mcp_environment, command_path
+
+DEFAULT_TRANSPORT = "streamable_http"
+REMOTE_TRANSPORTS = {"streamable_http", "sse"}
+
+
+def _coerce_servers(servers: Any) -> List[Dict[str, Any]]:
+    if isinstance(servers, str):
+        return [{"url": servers}]
+    return servers or []
+
+
+def _name_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    return path.rsplit("/", 1)[-1] or parsed.netloc
+
+
+def build_mcp_client_config(servers: Any) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, str]]]:
+    config = {}
+    sources = {}
+
+    for server in _coerce_servers(servers):
+        url = server.get("url")
+        if not url:
+            raise ValueError("MCP server config must include 'url'")
+        if not url.startswith(("http://", "https://")) or ".git" in url:
+            raise ValueError("MCP server 'url' must be an HTTP endpoint")
+
+        name = server.get("name") or _name_from_url(url)
+        transport = server.get("transport", DEFAULT_TRANSPORT)
+        if transport not in REMOTE_TRANSPORTS:
+            raise ValueError(f"Unsupported MCP transport '{transport}' for server '{name}'")
+
+        config[name] = {"transport": transport, "url": url}
+        for key in ("headers", "timeout", "sse_read_timeout", "session_kwargs"):
+            if key in server:
+                config[name][key] = server[key]
+        sources[name] = {"url": url, "transport": transport}
+
+    return config, sources
+
 
 class MCPManager:
     def __init__(self):
         self._client = None
         self._tools = []
         self._tool_sources = {}
-        self._session = None
-        self._session_ctx = None
         self._initialized = False
-        self._output_dir = None
 
-    def uninstall(self) -> None:
-        pass
-
-    async def load(self, servers: List[Dict[str, Any]], output_dir: str = None) -> List:
-        output_dir = os.path.abspath(output_dir) if output_dir else None
-
-        if self._initialized and self._output_dir == output_dir:
+    async def load(self, servers: Any) -> List:
+        if self._initialized:
             return self._tools
 
-        if self._initialized and self._output_dir != output_dir:
-            await self.close()
-
         from langchain_mcp_adapters.client import MultiServerMCPClient
-        from langchain_mcp_adapters.tools import load_mcp_tools
 
-        base_env = {**os.environ}
-        if output_dir:
-            base_env["MCP_OUTPUT_DIR"] = os.path.abspath(output_dir)
-
-        config = {}
-        server_urls = {}
-        for server in servers:
-            if "url" not in server:
-                raise ValueError("MCP server config must include 'url'")
-            url = server["url"]
-            name = server.get("name") or url.rstrip("/").rstrip(".git").split("/")[-1]
-            try:
-                env_dir, pkg = ensure_mcp_environment(name, url)
-            except Exception as e:
-                raise RuntimeError(f"Failed to set up MCP '{name}'. Check its url and dependencies. {e}") from e
-            command_name = server.get("command", name)
-            cmd = str(command_path(Path(env_dir), command_name))
-            if not os.path.exists(cmd):
-                fallback = str(command_path(Path(env_dir), pkg))
-                cmd = fallback if os.path.exists(fallback) else command_name
-            config[name] = {
-                "transport": "stdio",
-                "command": cmd,
-                "args": server.get("args", []),
-                "env": {**base_env, **server.get("env", {})},
-            }
-            server_urls[name] = {"url": url, "pkg": pkg}
-
+        config, sources = build_mcp_client_config(servers)
         self._client = MultiServerMCPClient(config)
         try:
-            server_name = next(iter(config))
-            self._session_ctx = self._client.session(server_name)
-            self._session = await self._session_ctx.__aenter__()
-            self._tools = await load_mcp_tools(self._session)
-            for tool in self._tools:
-                srv = getattr(tool, "server_name", None) or server_name
-                if srv in server_urls:
-                    self._tool_sources[tool.name] = server_urls[srv]
+            self._tools = await self._client.get_tools()
         except Exception as e:
             raise RuntimeError(f"MCP server(s) failed to load: {e}") from e
 
         if not self._tools:
             raise RuntimeError("MCP server(s) loaded but no tools were found")
 
+        for tool in self._tools:
+            server_name = getattr(tool, "server_name", None)
+            if server_name in sources:
+                self._tool_sources[tool.name] = sources[server_name]
+
         self._initialized = True
-        self._output_dir = output_dir
         return self._tools
 
     async def close(self):
-        """Clean up MCP session and client resources."""
-        if self._session_ctx:
-            try:
-                await self._session_ctx.__aexit__(None, None, None)
-            except Exception:
-                pass
-            self._session_ctx = None
-            self._session = None
+        self._client = None
+        self._tools = []
+        self._tool_sources = {}
         self._initialized = False
-        self._output_dir = None
 
     @property
     def tools(self) -> List:
