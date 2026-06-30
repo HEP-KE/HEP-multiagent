@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 
 DEFAULT_TRANSPORT = "streamable_http"
-REMOTE_TRANSPORTS = {"streamable_http", "sse"}
+REMOTE_TRANSPORTS = {"streamable_http"}
 
 
 def _coerce_servers(servers: Any) -> List[Dict[str, Any]]:
@@ -35,7 +35,7 @@ def build_mcp_client_config(servers: Any) -> Tuple[Dict[str, Dict[str, Any]], Di
             raise ValueError(f"Unsupported MCP transport '{transport}' for server '{name}'")
 
         config[name] = {"transport": transport, "url": url}
-        for key in ("headers", "timeout", "sse_read_timeout", "session_kwargs"):
+        for key in ("headers", "timeout", "session_kwargs"):
             if key in server:
                 config[name][key] = server[key]
         sources[name] = {"url": url, "transport": transport}

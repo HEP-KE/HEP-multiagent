@@ -50,11 +50,12 @@ async def synthesize(state: AgentState, llm: Any, report_writer, references, log
             break
 
     output_dir = state.get("output_dir", ".")
-    has_academic_report = report_writer is not None and references is not None
-    if has_academic_report:
+    has_report = report_writer is not None
+    has_references = references is not None
+    if has_references:
         references.load(output_dir)
 
-    cite_keys = _read_bib_keys(output_dir) if has_academic_report else "No papers available to cite."
+    cite_keys = _read_bib_keys(output_dir) if has_references else "No papers available to cite."
     response_format = "Write plain text or Markdown. Do not use LaTeX."
     report_structure = (
         """## Answer
@@ -102,7 +103,7 @@ REQUIRED SECTION - always include this."""
             logger.log("Synthesis", f"LLM error: {e}, using fallback")
         content = _fallback_report(plan, query)
 
-    if has_academic_report:
+    if has_report:
         if logger:
             logger.log("Synthesis", "LLM response received, generating PDF...")
 
@@ -157,7 +158,8 @@ REQUIRED SECTION - always include this.""",
             figures=figures,
         )
 
-        references.export(output_dir)
+        if has_references:
+            references.export(output_dir)
         report_writer.generate(data, output_dir, logger)
 
     if os.path.isdir(output_dir):

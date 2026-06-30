@@ -66,6 +66,7 @@ def build_graph(
     logger: Any = None,
     notebook: Any = None,
     lesson_memory: LessonMemory = None,
+    issue_tracking: bool = True,
 ):
     async def worker_node(s):
         from .state import get_dependency_context
@@ -85,7 +86,18 @@ def build_graph(
         lessons = await recall(lesson_memory, worker_type)
         if logger and worker_type:
             _log_lessons_recalled(logger, worker_type, lessons)
-        result = await worker.execute(s, llm, tools, WORKERS, artifact_extensions, get_output_dir(), logger, notebook, lessons)
+        result = await worker.execute(
+            s,
+            llm,
+            tools,
+            WORKERS,
+            artifact_extensions,
+            get_output_dir(),
+            logger,
+            notebook,
+            lessons,
+            issue_tracking=issue_tracking,
+        )
         updated_step = next((st for st in result.get("plan", {}).get("steps", []) if st["id"] == step_id), {})
         task = step["description"] if step else ""
         status = updated_step.get("status")

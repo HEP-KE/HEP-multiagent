@@ -8,7 +8,7 @@ The package is intentionally an orchestrator, not an MCP server process manager.
 
 - Plan-and-execute workflow for multi-step scientific tasks
 - Specialized workers for data access, computation, literature search, and visualization
-- MCP integration for domain tools over `streamable_http` or `sse`
+- MCP integration for domain tools over `streamable_http`
 - Optional human approval before execution
 - Reproducible outputs: report, citations, execution log, and replay notebook
 
@@ -43,7 +43,6 @@ async def main():
     agent = await Agent(
         llm=llm,
         mcp_servers=[{"name": "hep-tools", "url": "http://localhost:8000/mcp"}],
-        approval=False,
     )
 
     result = await agent.run(
@@ -100,7 +99,7 @@ Fields:
 |-------|----------|-------------|
 | `url` | yes | HTTP MCP endpoint |
 | `name` | no | Stable server name for tracing |
-| `transport` | no | `streamable_http` by default; use `sse` for SSE servers |
+| `transport` | no | `streamable_http` |
 | `headers` | no | Request headers for authentication |
 
 Start tool servers outside HEP-multiagent and expose them through one of the supported HTTP transports.
@@ -116,34 +115,61 @@ Each run writes to `output_dir`:
 | `references.bib` | BibTeX entries collected through citation tools |
 | `report.tex` / `report.pdf` | Final report when LaTeX generation is enabled |
 
+## Feature Toggles
+
+Optional behavior is controlled at initialization with `AgentFeatures`:
+
+```python
+from hep_multiagent import Agent, AgentFeatures
+
+features = AgentFeatures(
+    plan_approval=False,
+    python_execution_approval=False,
+    lesson_memory=False,
+    report=True,
+    citations=True,
+    execution_log=True,
+    replay_notebook=True,
+    issue_tracking=True,
+)
+
+agent = await Agent(llm=llm, mcp_servers=mcp_servers, features=features)
+```
+
+For experiment sweeps, the same settings can be passed as a plain dictionary:
+
+```python
+agent = await Agent(llm=llm, features={"lesson_memory": False, "replay_notebook": False})
+```
+
+| Toggle | Default | Effect |
+|--------|---------|--------|
+| `plan_approval` | `False` | Require approval before executing a plan |
+| `python_execution_approval` | `False` | Require approval before built-in Python execution |
+| `lesson_memory` | `True` | Recall/save lessons from failed worker attempts |
+| `report` | `True` | Generate LaTeX/PDF report artifacts |
+| `citations` | `True` | Track BibTeX references |
+| `execution_log` | `True` | Write `execution_log.md` |
+| `replay_notebook` | `True` | Write `execution.ipynb` |
+| `issue_tracking` | `True` | Give workers the `log_issue` diagnostic tool |
+
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Q[User query] --> P[Planner]
+    Q[User<br/>query] --> P[Planner]
     P --> A{Approval}
     A --> R[Router]
-    R --> D[Data worker]
-    R --> C[Compute worker]
-    R --> L[Research worker]
-    R --> V[Viz worker]
+    R --> D[Data<br/>worker]
+    R --> C[Compute<br/>worker]
+    R --> L[Research<br/>worker]
+    R --> V[Viz<br/>worker]
     D --> S[Synthesis]
     C --> S
     L --> S
     V --> S
-    S --> O[Report and artifacts]
+    S --> O[Report<br/>and artifacts]
 ```
-
-Core modules:
-
-| Path | Role |
-|------|------|
-| `src/hep_multiagent/agent.py` | Public `Agent` API |
-| `src/hep_multiagent/graph.py` | LangGraph assembly |
-| `src/hep_multiagent/mcp.py` | Remote MCP endpoint configuration |
-| `src/hep_multiagent/nodes/` | Planner, router, worker, supervisor, synthesis nodes |
-| `src/hep_multiagent/workers/` | Worker prompts and built-in tools |
-| `src/hep_multiagent/features/` | Reporting, citations, approval, logging, replay |
 
 ## Development
 

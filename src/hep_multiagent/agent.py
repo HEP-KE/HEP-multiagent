@@ -6,10 +6,11 @@ from typing import Any, Dict, List, Union
 from langchain_core.messages import HumanMessage
 
 from .config import (
-    ACADEMIC_REPORT, DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
+    DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
     REPORTS, REFERENCES, SQLiteCheckpoint, APPROVAL, ExecutionNotebook,
 )
 from .workers.compute import set_code_approval, set_output_dir
+from .features.config import AgentFeatures
 from .features.lesson_memory import LessonMemory
 from .graph import build_graph
 from .features.agent_trace import MarkdownLogger
@@ -21,23 +22,26 @@ class Agent:
         self,
         llm: Any,
         mcp_servers: Union[str, List[Dict[str, Any]]] = None,
-        approval: bool = False,
+        plan_approval: bool = False,
         lesson_memory: bool = True,
+        features: Union[AgentFeatures, Dict[str, bool]] = None,
     ):
         self.llm = llm
         self.mcp_servers = mcp_servers
         self.artifact_extensions = DEFAULT_EXTENSIONS
-        self._enable_lesson_memory = lesson_memory
+        if isinstance(features, dict):
+            features = AgentFeatures(**features)
+        self.features = features or AgentFeatures(plan_approval=plan_approval, lesson_memory=lesson_memory)
 
-        self.report = REPORTS["latex"]() if ACADEMIC_REPORT else None
-        self.references = REFERENCES["bibtex"]() if ACADEMIC_REPORT else None
+        self.report = REPORTS["latex"]() if self.features.report else None
+        self.references = REFERENCES["bibtex"]() if self.features.citations else None
         self.checkpoint = None  # initialized in run() with cwd path
-        self.approval = APPROVAL["interrupt"]() if approval else APPROVAL["auto"]()
-        set_code_approval(self.approval if approval else None)
+        self.approval = APPROVAL["interrupt"]() if self.features.plan_approval else APPROVAL["auto"]()
+        set_code_approval(self.approval if self.features.python_execution_approval else None)
 
         self.output_dir = None
-        self.logger = MarkdownLogger()
-        self.notebook = ExecutionNotebook()
+        self.logger = MarkdownLogger() if self.features.execution_log else None
+        self.notebook = ExecutionNotebook() if self.features.replay_notebook else None
         self.lesson_memory = None
         self._mcp = MCPManager()
         self._graph = None
@@ -70,21 +74,25 @@ class Agent:
         os.makedirs(self.output_dir, exist_ok=True)
         set_output_dir(self.output_dir)
 
-        self.logger.init(self.output_dir)
-        self.logger.log("Start", f"Query: {query[:100]}...")
+        if self.logger:
+            self.logger.init(self.output_dir)
+            self.logger.log("Start", f"Query: {query[:100]}...")
 
         if self.checkpoint is None:
             db_path = os.path.join(os.getcwd(), "checkpoint.db")
             self.checkpoint = SQLiteCheckpoint(db_path)
-            if self._enable_lesson_memory:
+            if self.features.lesson_memory:
                 self.lesson_memory = LessonMemory(db_path)
                 await self.lesson_memory.init()
 
         if self.mcp_servers:
-            self.logger.log("MCP", "Loading MCP servers...")
+            if self.logger:
+                self.logger.log("MCP", "Loading MCP servers...")
             await self._mcp.load(self.mcp_servers)
-            self.logger.log("MCP", f"Loaded {len(self._mcp.tools)} tools")
-        self.notebook.init(self.output_dir, self._mcp.tool_sources, self.logger)
+            if self.logger:
+                self.logger.log("MCP", f"Loaded {len(self._mcp.tools)} tools")
+        if self.notebook:
+            self.notebook.init(self.output_dir, self._mcp.tool_sources, self.logger)
         thread_id = self._get_thread_id(query, resume)
         config = {"configurable": {"thread_id": thread_id}}
 
@@ -122,6 +130,7 @@ class Agent:
                     logger=self.logger,
                     notebook=self.notebook,
                     lesson_memory=self.lesson_memory,
+                    issue_tracking=self.features.issue_tracking,
                 )
 
                 if initial:
@@ -145,13 +154,16 @@ class Agent:
                     result = await self._graph.ainvoke(update, config)
 
         except Exception as e:
-            self.logger.error(e)
+            if self.logger:
+                self.logger.error(e)
             if "Connection" in type(e).__name__:
                 raise RuntimeError(f"LLM connection failed: {e}") from None
             raise
         finally:
-            self.logger.close()
-            self.notebook.close()
+            if self.logger:
+                self.logger.close()
+            if self.notebook:
+                self.notebook.close()
             await self._mcp.close()
 
         return result

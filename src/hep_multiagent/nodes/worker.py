@@ -22,6 +22,7 @@ async def execute(
     logger: Any = None,
     notebook: Any = None,
     lessons: str = "",
+    issue_tracking: bool = True,
 ) -> dict:
     plan = state.get("plan")
     step_id = state.get("current_step_id")
@@ -34,7 +35,9 @@ async def execute(
     previous_attempts = step.get("attempts", [])
     research_context = plan.get("research_context")
 
-    worker_tools = list(tools) + [final_answer, log_issue]
+    worker_tools = list(tools) + [final_answer]
+    if issue_tracking:
+        worker_tools.append(log_issue)
     if step["worker_type"] in WORKER_TOOLS:
         worker_tools.extend(WORKER_TOOLS[step["worker_type"]]())
 

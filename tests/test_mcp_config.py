@@ -22,19 +22,18 @@ def test_remote_url_defaults_to_streamable_http():
     }
 
 
-def test_remote_url_keeps_explicit_sse_transport_and_headers():
+def test_remote_url_keeps_headers():
     config, _ = mcp.build_mcp_client_config(
         [{
             "name": "kb",
-            "url": "http://localhost:8001/sse",
-            "transport": "sse",
+            "url": "http://localhost:8001/mcp",
             "headers": {"Authorization": "Bearer token"},
         }]
     )
 
     assert config["kb"] == {
-        "transport": "sse",
-        "url": "http://localhost:8001/sse",
+        "transport": "streamable_http",
+        "url": "http://localhost:8001/mcp",
         "headers": {"Authorization": "Bearer token"},
     }
 
@@ -67,5 +66,5 @@ def test_rejects_unsupported_transport():
         mcp.build_mcp_client_config([{
             "name": "bad",
             "url": "http://localhost:8000/mcp",
-            "transport": "unsupported",
+            "transport": "sse",
         }])

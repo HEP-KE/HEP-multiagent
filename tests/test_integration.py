@@ -10,7 +10,7 @@ import pytest
 
 from langchain_core.messages import AIMessage
 
-from hep_multiagent import Agent
+from hep_multiagent import Agent, AgentFeatures
 from hep_multiagent.config import WORKERS, WORKER_TOOLS
 from hep_multiagent.graph import build_graph
 from hep_multiagent.features.agent_trace import MarkdownLogger
@@ -88,13 +88,54 @@ def mock_tools():
 
 def test_agent_initialization():
     llm = MockLLM()
-    agent = Agent(llm=llm, mcp_servers=None, approval=False)
+    agent = Agent(llm=llm, mcp_servers=None)
 
     assert agent.llm is llm
     assert agent.report is not None
     assert agent.references is not None
     assert agent.logger is not None
     assert agent.notebook is not None
+
+
+def test_agent_feature_toggles_disable_optional_components():
+    llm = MockLLM()
+    features = AgentFeatures(
+        plan_approval=False,
+        python_execution_approval=False,
+        lesson_memory=False,
+        report=False,
+        citations=False,
+        execution_log=False,
+        replay_notebook=False,
+        issue_tracking=False,
+    )
+    agent = Agent(llm=llm, mcp_servers=None, features=features)
+
+    assert agent.features == features
+    assert agent.report is None
+    assert agent.references is None
+    assert agent.logger is None
+    assert agent.notebook is None
+
+
+def test_agent_plan_approval_kwarg_maps_to_features():
+    llm = MockLLM()
+    agent = Agent(llm=llm, mcp_servers=None, plan_approval=True, lesson_memory=False)
+
+    assert agent.features.plan_approval is True
+    assert agent.features.lesson_memory is False
+
+
+def test_agent_feature_dict_uses_current_names():
+    llm = MockLLM()
+    agent = Agent(
+        llm=llm,
+        mcp_servers=None,
+        features={"plan_approval": True, "python_execution_approval": True},
+    )
+
+    assert agent.features.plan_approval is True
+    assert agent.features.python_execution_approval is True
 
 
 def test_workers_registered():
