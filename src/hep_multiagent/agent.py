@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Union
 from langchain_core.messages import HumanMessage
 
 from .config import (
-    DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR, WORKERS,
+    DEFAULT_EXTENSIONS, DEFAULT_OUTPUT_DIR,
     REPORTS, REFERENCES, SQLiteCheckpoint, APPROVAL, ExecutionNotebook,
 )
 from .workers.compute import set_code_approval, set_output_dir
@@ -151,10 +151,12 @@ class Agent:
                     structured_worker_output=self.features.structured_worker_output,
                     run_local_tool_prototyping=self.features.run_local_tool_prototyping,
                     role_prompts=self.features.role_prompts,
+                    planner_consultations=self.features.planner_consultations,
+                    enabled_worker_types=self.features.enabled_workers,
                     diagnostics=self.diagnostics,
                 )
                 if self.diagnostics:
-                    self.diagnostics.configure_tools(self._mcp.tools, self._mcp.tool_sources, list(WORKERS))
+                    self.diagnostics.configure_tools(self._mcp.tools, self._mcp.tool_sources, list(self.features.enabled_workers))
 
                 if initial:
                     result = await self._graph.ainvoke(initial, config)

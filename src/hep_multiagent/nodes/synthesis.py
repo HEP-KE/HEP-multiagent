@@ -104,8 +104,10 @@ REQUIRED SECTION - always include this."""
         content = response.content
     except Exception as e:
         if logger:
-            logger.log("Synthesis", f"LLM error: {e}, using fallback")
-        content = _fallback_report(plan, query)
+            logger.log("Synthesis", f"LLM error: {e}")
+        if diagnostics:
+            diagnostics.failure("report_generation_failure", "synthesis", None, f"Final report generation failed: {e}", False, "final_report_failed")
+        raise
 
     if has_report:
         if logger:
@@ -254,18 +256,6 @@ def _build_execution_summary(plan: Plan) -> str:
             if attempt.get("thoughts"):
                 lines.append(f"Agent Reasoning: {attempt['thoughts']}")
         lines.append("")
-    return "\n".join(lines)
-
-
-def _fallback_report(plan: Plan, query: str) -> str:
-    lines = [f"# {plan['goal']}", "", "## Query", query, "", "## Steps"]
-    for step in plan["steps"]:
-        status = "✓" if step["status"] == "completed" else "✗"
-        lines.append(f"\n### {status} {step['name']}")
-        if step.get("solution"):
-            lines.append(step["solution"])
-        if step.get("error"):
-            lines.append(f"**Error:** {step['error']}")
     return "\n".join(lines)
 
 

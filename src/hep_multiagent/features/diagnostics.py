@@ -90,6 +90,11 @@ class RunDiagnostics:
                 "token_count_method": f"tiktoken:{TokenCounter.encoding_name}",
                 "python_version": platform.python_version(),
                 "features": asdict(features),
+                "experiment_features": features.experiment_features(),
+                "interactive_controls": {
+                    "plan_approval": bool(getattr(features, "plan_approval", False)),
+                    "python_execution_approval": bool(getattr(features, "python_execution_approval", False)),
+                },
                 "mcp_servers": self._normalize_mcp_servers(mcp_servers),
                 "available_tools": [],
                 "worker_types": [],

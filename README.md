@@ -12,6 +12,14 @@ The package is intentionally an orchestrator, not an MCP server process manager.
 - Optional human approval before execution
 - Reproducible outputs: report, citations, execution log, and replay notebook
 
+## Design Boundary
+
+HEP-multiagent uses deterministic graph control for orchestration. `Agent`, `LangGraph`, `AgentState`, `Supervisor`, and `Router` set up runs, maintain state, choose phases, and select ready steps without LLM calls.
+
+LLMs are used only in the planner, optional planning consultants, workers, and synthesis. Prompt text defines role context and output contracts for those LLM phases; it is not the scheduler or state manager. Experimental runs can disable built-in role prompts with `role_prompts=False`, disable planning consultants with `planner_consultations=False`, restrict available worker roles with `enabled_workers`, and compare the resulting behavior through `run_diagnostics.json`.
+
+The LLM boundaries are contract checked. Planner output must parse as JSON and use enabled worker types. Workers must finish through a completion tool, either `final_answer` or, when enabled, `structured_final_answer`. Diagnostics record LLM calls, output contracts, tool calls, invalid plans, missing completion calls, unknown tools, missing artifacts, and citation support checks.
+
 ## Install
 
 ```bash
@@ -138,15 +146,24 @@ features = AgentFeatures(
     structured_worker_output=False,
     run_local_tool_prototyping=False,
     role_prompts=True,
+    planner_consultations=True,
+    enabled_workers=("data", "compute", "research", "viz"),
 )
 
 agent = await Agent(llm=llm, mcp_servers=mcp_servers, features=features)
 ```
 
-For experiment sweeps, the same settings can be passed as a plain dictionary:
+For automated experiment sweeps, keep human approval disabled and vary only the system features under study:
 
 ```python
-agent = await Agent(llm=llm, features={"lesson_memory": False, "replay_notebook": False})
+agent = await Agent(
+    llm=llm,
+    features={
+        "plan_approval": False,
+        "python_execution_approval": False,
+        "planner_consultations": False,
+    },
+)
 ```
 
 | Toggle | Default | Effect |
@@ -163,8 +180,12 @@ agent = await Agent(llm=llm, features={"lesson_memory": False, "replay_notebook"
 | `structured_worker_output` | `False` | Require workers to finish with structured artifacts, observations, and limitations |
 | `run_local_tool_prototyping` | `False` | Let compute workers create temporary helper tools inside `output_dir/run_local_tools` |
 | `role_prompts` | `True` | Use the built-in planner and worker role prompts |
+| `planner_consultations` | `True` | Let the planner call arXiv, file, and data consultants before writing the plan |
+| `enabled_workers` | `("data", "compute", "research", "viz")` | Restrict which worker types the planner and router may use |
 
 `run_diagnostics.json` is local and deterministic. It records system behavior, not scientific correctness: run configuration, model name, token counts from `tiktoken:cl100k_base`, graph events, worker/tool activity, recovered and unrecovered failures, and checks such as invalid plans, unknown tools, missing artifacts, unsupported citations, and omitted failed steps.
+
+Diagnostics separate `experiment_features` from `interactive_controls`. Human approval gates are recorded for reproducibility, but excluded from the automated comparison feature set because they add human variance.
 
 Run-local tool prototyping does not modify repository code or MCP servers. It exposes `create_run_local_tool` and `run_local_tool` only for the current run, so experiments can measure whether temporary helper code improves or disrupts the workflow.
 
@@ -200,74 +221,172 @@ pytest
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as User
-    participant A as Agent
-    participant M as MCPManager
-    participant G as LangGraph
-    participant P as Planner
-    participant C as Consultants
-    participant S as Supervisor
-    participant R as Router
-    participant W as Worker
-    participant T as Tools/MCP
-    participant Y as Synthesis
-    participant D as Diagnostics
-    participant O as Output files
+    actor U as User<br/>submits analysis request
+    participant A as Agent<br/>initializes each run
+    participant M as MCPManager<br/>connects tool servers
+    participant T as Tools/MCP<br/>executes tool calls
+    participant G as LangGraph<br/>invokes graph nodes
+    participant AS as AgentState<br/>stores run state
+    participant S as Supervisor<br/>selects graph phase
+    box rgb(239, 246, 255) Planner LLM
+        participant P as Planner<br/>(LLM)<br/>creates step plan
+    end
+    box rgb(239, 246, 255) Consultant LLMs
+        participant C as Consultants<br/>(LLM)<br/>inform planner only
+    end
+    participant R as Router<br/>selects ready step
+    box rgb(239, 246, 255) Worker LLM
+        participant W as Worker<br/>(LLM)<br/>enabled worker role
+    end
+    box rgb(239, 246, 255) Synthesis LLM
+        participant Y as Synthesis<br/>(LLM)<br/>writes final answer
+    end
+    participant D as Diagnostics<br/>records run behavior
+    participant X as Checkpoint DB<br/>persists graph state
+    participant O as Output files<br/>stores run artifacts
 
-    U->>A: run(query, output_dir)
-    A->>O: create output_dir
-    A->>D: start run record
-    A->>M: load configured MCP endpoints
-    M->>T: get tool schemas
-    T-->>M: available tools
-    M-->>A: tools + source metadata
-    A->>G: build graph with features, tools, artifacts, diagnostics
-
-    G->>S: inspect state
-    S-->>G: next_action = plan
-    G->>P: create plan
-    P->>C: optional arxiv/file/data consultation
-    C->>T: call available tools when needed
-    T-->>C: observations
-    C-->>P: planning context
-    P-->>G: draft plan
-    G->>D: record planner LLM call and plan checks
-
-    alt plan_approval enabled
-        G-->>A: await approval
-        A->>U: show proposed plan
-        U-->>A: approve or feedback
-        A->>G: approval update
+    U->>A: create Agent(llm, mcp_servers, features)
+    opt awaited Agent with MCP servers
+        A->>M: load configured MCP endpoints
+        M->>T: read tool schemas
+        T-->>M: available tools
     end
 
-    loop until plan complete, failed, or stuck
-        G->>S: inspect plan status
-        S-->>G: next_action = execute
-        G->>R: select ready step
-        R-->>G: current_step_id
-        G->>W: execute assigned worker step
-        W->>D: record worker start, tools available, dependency check
-        W->>T: call MCP, built-in, or run-local tools
-        T-->>W: tool result or error
-        W->>D: record LLM/tool calls, failures, recovery signals
-        opt run_local_tool_prototyping enabled
-            W->>O: create helper under output_dir/run_local_tools
-            W->>T: run helper function
-        end
-        alt structured_worker_output enabled
-            W-->>G: status, summary, artifacts, observations, limitations
-        else default completion
-            W-->>G: status and summary
-        end
-        G->>O: update log/notebook/artifacts
-        G->>D: record step outcome
+    U->>A: run(query, output_dir, resume)
+    A->>O: create output_dir and configure artifact paths
+    opt execution_log enabled
+        A->>O: open execution_log.md
+    end
+    opt run_diagnostics enabled
+        A->>D: start run record
+    end
+    A->>X: open checkpoint.db
+    opt lesson_memory enabled
+        A->>X: initialize lesson memory tables
+    end
+    opt MCP servers configured
+        A->>M: load configured MCP endpoints
+        M->>T: read tool schemas
+        T-->>M: available tools
+        M-->>A: tools and source metadata
+    end
+    opt replay_notebook enabled
+        A->>O: open execution.ipynb with tool source metadata
+    end
+    A->>G: build graph with features, tools, writers, checkpoint, diagnostics
+    G->>AS: use repo-defined state schema
+
+    alt resume with existing checkpoint state
+        A->>X: load prior graph state
+        X-->>AS: saved AgentState
+        A->>G: continue from checkpoint
+    else new run
+        A->>AS: initialize query state
+        A->>G: start with query message and next_action=plan
     end
 
-    G->>Y: synthesize final answer
-    Y->>O: write report/references when enabled
-    Y-->>G: final_report
-    G-->>A: final state
-    A->>D: finalize checks and metrics
-    D->>O: write run_diagnostics.json
+    loop graph runs until approval wait, completion, or failure
+        G->>AS: read current state
+        G->>S: inspect AgentState
+        S-->>G: next_action
+
+        alt next_action is plan
+            G->>P: create execution plan
+            opt planner_consultations enabled
+                opt vague scientific terms detected
+                    P->>C: arXiv consultation
+                    C->>T: search/read research tools
+                    T-->>C: research observations
+                    C-->>P: criteria and citation context
+                end
+                opt local file paths detected
+                    P->>C: file consultation
+                    C->>T: inspect file through available tools
+                    T-->>C: file structure observations
+                    C-->>P: columns and data context
+                end
+                opt MCP tools available and no file paths
+                    P->>C: data-source consultation
+                    C->>T: inspect available MCP tools
+                    T-->>C: source observations
+                    C-->>P: data access context
+                end
+            end
+            P-->>G: plan or planner error
+            G->>AS: merge plan update
+            G->>D: record planner call and validate plan
+            G->>S: return to supervisor
+        end
+
+        alt next_action is await_approval
+            G-->>A: await approval
+            A->>U: show proposed plan
+            U-->>A: approve or feedback
+            A->>G: submit approval update
+            G->>AS: merge approval update
+            G->>S: resume at supervisor
+        end
+
+        alt next_action is execute
+            G->>R: select ready step
+            R-->>G: current_step_id
+            G->>AS: mark step running
+            G->>W: execute routed enabled worker step
+            W->>D: record worker start, tools available, dependency check
+            opt lesson_memory enabled
+                W->>X: recall lessons for worker type
+            end
+            loop worker iterations until final answer, retry limit, or failure
+                W->>W: choose MCP, built-in, or completion tool
+                W->>T: call selected MCP or built-in tool
+                T-->>W: result or error
+                W->>D: record LLM call, tool call, artifacts, failures, recovery signals
+                opt run_local_tool_prototyping enabled for compute worker
+                    W->>O: create helper under output_dir/run_local_tools
+                    W->>T: run helper function
+                end
+            end
+            alt structured_worker_output enabled
+                W-->>G: status, summary, artifacts, observations, limitations
+            else default completion
+                W-->>G: status and summary
+            end
+            G->>AS: merge step result
+            G->>X: save graph checkpoint
+            G->>O: update log, notebook, and artifacts
+            opt lesson_memory enabled
+                G->>X: save lesson from failed worker attempt
+            end
+            G->>D: record step outcome
+            G->>S: return to supervisor
+        end
+
+        alt next_action is synthesize
+            G->>Y: synthesize final answer
+            Y->>O: read step outputs, artifacts, and references
+            Y-->>G: final report text
+            G->>AS: merge final report
+            opt report enabled
+                Y->>Y: generate LaTeX report body
+                Y->>O: write report artifacts
+            end
+            opt citations enabled
+                Y->>O: export references.bib
+            end
+            G-->>A: final state
+        end
+    end
+
+    opt run_diagnostics enabled
+        alt run completed
+            A->>D: finalize checks and metrics
+            D->>O: write run_diagnostics.json
+        else run failed
+            A->>D: record failure and finalize diagnostics
+            D->>O: write run_diagnostics.json
+        end
+    end
+    A->>O: close log and notebook
+    A->>M: close MCP connections
     A-->>U: return result
 ```

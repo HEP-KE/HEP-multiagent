@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from hep_multiagent import Agent, AgentFeatures
 from hep_multiagent.graph import build_graph
@@ -139,11 +139,50 @@ def test_agent_feature_dict_uses_current_names():
     agent = Agent(
         llm=llm,
         mcp_servers=None,
-        features={"plan_approval": True, "python_execution_approval": True},
+        features={
+            "plan_approval": True,
+            "python_execution_approval": True,
+            "enabled_workers": ["compute", "viz"],
+        },
     )
 
     assert agent.features.plan_approval is True
     assert agent.features.python_execution_approval is True
+    assert agent.features.enabled_workers == ("compute", "viz")
+
+
+def test_agent_features_reject_unknown_workers():
+    with pytest.raises(ValueError, match="Unknown worker"):
+        AgentFeatures(enabled_workers=("compute", "invalid"))
+
+
+def test_planner_consultations_can_be_disabled(monkeypatch):
+    from hep_multiagent.nodes import planner
+
+    class PlanOnlyLLM:
+        async def ainvoke(self, messages):
+            return AIMessage(content='''{
+                "goal": "answer research query",
+                "steps": [
+                    {"id": "s1", "name": "search", "worker_type": "research", "description": "search papers", "depends_on": []}
+                ]
+            }''')
+
+    async def fail_consult(*args, **kwargs):
+        raise AssertionError("consultant should not be called")
+
+    monkeypatch.setattr(planner.CONSULTANTS["arxiv"], "consult", fail_consult)
+    state = {"messages": [HumanMessage(content="Find interesting papers")], "output_dir": "/tmp"}
+    result = asyncio.run(planner.plan(
+        state,
+        PlanOnlyLLM(),
+        tools=[],
+        worker_docs="- research: Search arxiv and cite papers",
+        planner_consultations=False,
+        worker_types=("research",),
+    ))
+
+    assert result["plan"]["steps"][0]["worker_type"] == "research"
 
 
 def test_logger_writes_to_file(temp_output_dir):

@@ -16,11 +16,17 @@ def _patch_token_counter(monkeypatch):
 
 def test_diagnostics_writes_comparison_ready_json(tmp_path, monkeypatch):
     _patch_token_counter(monkeypatch)
+    features = AgentFeatures(
+        run_diagnostics=True,
+        structured_worker_output=True,
+        plan_approval=True,
+        python_execution_approval=True,
+    )
     diagnostics = RunDiagnostics(
         query="Analyze data",
         output_dir=str(tmp_path),
         llm=MockLLM(),
-        features=AgentFeatures(run_diagnostics=True, structured_worker_output=True),
+        features=features,
         mcp_servers=[{"name": "hep-tools", "url": "http://localhost:8000/mcp"}],
     )
     diagnostics.configure_tools([], {}, ["data", "compute", "research", "viz"])
@@ -33,6 +39,14 @@ def test_diagnostics_writes_comparison_ready_json(tmp_path, monkeypatch):
     content = path.read_text()
     assert '"token_count_method": "tiktoken:cl100k_base"' in content
     assert '"tool_calls_total": 1' in content
+    config = diagnostics.data["configuration"]
+    assert config["interactive_controls"] == {
+        "plan_approval": True,
+        "python_execution_approval": True,
+    }
+    assert "plan_approval" not in config["experiment_features"]
+    assert "python_execution_approval" not in config["experiment_features"]
+    assert config["experiment_features"]["structured_worker_output"] is True
 
 
 def test_diagnostics_marks_missing_artifact_as_hallucination(tmp_path, monkeypatch):

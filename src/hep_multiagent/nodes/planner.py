@@ -48,10 +48,7 @@ CORRECT approach:
 
 {tool_docs}
 
-- **data**: Fetch remote data via MCP tools
-- **compute**: Load files, filter, transform, compute statistics, save results
-- **research**: Search arxiv AND cite papers. Use ONLY when papers must appear with citations in the final report.
-- **viz**: Create plots and visualizations
+{worker_summary}
 
 {research_instruction}
 
@@ -64,7 +61,7 @@ CORRECT approach:
         {{
             "id": "s1",
             "name": "step_name",
-            "worker_type": "data|compute|research|viz",
+            "worker_type": "{worker_type_options}",
             "description": "Detailed instructions with SPECIFIC values from consultation",
             "depends_on": []
         }}
@@ -105,7 +102,7 @@ Return JSON with this shape:
     {{
       "id": "s1",
       "name": "step_name",
-      "worker_type": "data|compute|research|viz",
+      "worker_type": "{worker_type_options}",
       "description": "specific task",
       "depends_on": []
     }}
@@ -119,6 +116,17 @@ VAGUE_TERMS = [
     "good", "bad", "typical", "atypical", "normal", "abnormal",
     "extreme", "moderate",
 ]
+
+WORKER_SUMMARIES = {
+    "data": "- **data**: Fetch remote data via MCP tools",
+    "compute": "- **compute**: Load files, filter, transform, compute statistics, save results",
+    "research": "- **research**: Search arxiv and cite papers for the final report",
+    "viz": "- **viz**: Create plots and visualizations",
+}
+
+
+def _worker_summary(worker_types: tuple[str, ...]) -> str:
+    return "\n".join(WORKER_SUMMARIES[name] for name in worker_types)
 
 
 def detect_vague_terms(query: str) -> List[str]:
@@ -170,7 +178,17 @@ def extract_json(text: str) -> Optional[str]:
         return None
 
 
-async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logger=None, diagnostics=None, role_prompts: bool = True) -> dict:
+async def plan(
+    state: AgentState,
+    llm: Any,
+    tools: List,
+    worker_docs: str,
+    logger=None,
+    diagnostics=None,
+    role_prompts: bool = True,
+    planner_consultations: bool = True,
+    worker_types: tuple[str, ...] = ("data", "compute", "research", "viz"),
+) -> dict:
     tool_docs_str = "\n".join(f"- {t.name}: {t.description}" for t in tools)
 
     query = ""
@@ -197,49 +215,52 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
 
     vague = detect_vague_terms(query)
 
-    if vague:
-        if logger:
-            logger.log("Arxiv Consultant", f"Input: query=\"{query}\", vague_terms={vague}")
-        if diagnostics:
-            diagnostics.event("arxiv_consultant", "started", f"Vague terms detected: {', '.join(vague)}")
-        result = await CONSULTANTS["arxiv"].consult(llm, get_research_tools(), query)
-        if logger:
-            logger.log("Arxiv Consultant", f"Output:\n{result}")
-        if diagnostics:
-            diagnostics.event("arxiv_consultant", "completed", "Research consultation completed")
-        consultation_parts.append(f"## Research Results (already completed - DO NOT re-research)\n{result}")
-        arxiv_consulted = True
+    if planner_consultations:
+        if vague:
+            if logger:
+                logger.log("Arxiv Consultant", f"Input: query=\"{query}\", vague_terms={vague}")
+            if diagnostics:
+                diagnostics.event("arxiv_consultant", "started", f"Vague terms detected: {', '.join(vague)}")
+            result = await CONSULTANTS["arxiv"].consult(llm, get_research_tools(), query)
+            if logger:
+                logger.log("Arxiv Consultant", f"Output:\n{result}")
+            if diagnostics:
+                diagnostics.event("arxiv_consultant", "completed", "Research consultation completed")
+            consultation_parts.append(f"## Research Results (already completed - DO NOT re-research)\n{result}")
+            arxiv_consulted = True
 
-    for path in files:
-        if logger:
-            logger.log("File Consultant", f"Input: path=\"{path}\"")
-        if diagnostics:
-            diagnostics.event("file_consultant", "started", f"Inspecting {path}")
-        result = await CONSULTANTS["file"].consult(llm, tools, f"Describe columns and structure of {path}")
-        if logger:
-            logger.log("File Consultant", f"Output:\n{result}")
-        if diagnostics:
-            diagnostics.event("file_consultant", "completed", f"Inspected {path}")
-        consultation_parts.append(f"## File: {path}\n{result}")
+        for path in files:
+            if logger:
+                logger.log("File Consultant", f"Input: path=\"{path}\"")
+            if diagnostics:
+                diagnostics.event("file_consultant", "started", f"Inspecting {path}")
+            result = await CONSULTANTS["file"].consult(llm, tools, f"Describe columns and structure of {path}")
+            if logger:
+                logger.log("File Consultant", f"Output:\n{result}")
+            if diagnostics:
+                diagnostics.event("file_consultant", "completed", f"Inspected {path}")
+            consultation_parts.append(f"## File: {path}\n{result}")
 
-    if not files and not arxiv_consulted and tools:
-        tool_doc_list = []
-        for t in tools:
-            schema = t.args_schema if isinstance(t.args_schema, dict) else (t.args_schema.schema() if t.args_schema else {})
-            params = schema.get("properties", {})
-            param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
-            tool_doc_list.append(f"- {t.name}({param_str}): {t.description}")
-        question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_doc_list)
-        if logger:
-            logger.log("Data Consultant", f"Input: query=\"{query}\", tools={len(tools)}")
-        if diagnostics:
-            diagnostics.event("data_consultant", "started", f"Inspecting {len(tools)} available tools")
-        result = await CONSULTANTS["data"].consult(llm, tools, question)
-        if logger:
-            logger.log("Data Consultant", f"Output:\n{result}")
-        if diagnostics:
-            diagnostics.event("data_consultant", "completed", "Data consultation completed")
-        consultation_parts.append(f"## Available Data\n{result}")
+        if not files and not arxiv_consulted and tools:
+            tool_doc_list = []
+            for t in tools:
+                schema = t.args_schema if isinstance(t.args_schema, dict) else (t.args_schema.schema() if t.args_schema else {})
+                params = schema.get("properties", {})
+                param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
+                tool_doc_list.append(f"- {t.name}({param_str}): {t.description}")
+            question = f"What data sources are available for: {query}\n\nAvailable tools:\n" + "\n".join(tool_doc_list)
+            if logger:
+                logger.log("Data Consultant", f"Input: query=\"{query}\", tools={len(tools)}")
+            if diagnostics:
+                diagnostics.event("data_consultant", "started", f"Inspecting {len(tools)} available tools")
+            result = await CONSULTANTS["data"].consult(llm, tools, question)
+            if logger:
+                logger.log("Data Consultant", f"Output:\n{result}")
+            if diagnostics:
+                diagnostics.event("data_consultant", "completed", "Data consultation completed")
+            consultation_parts.append(f"## Available Data\n{result}")
+    elif diagnostics:
+        diagnostics.event("planner", "consultations_disabled", "Planner consultant calls disabled")
 
     consultation_context = "\n\n".join(consultation_parts)
     if consultation_context:
@@ -253,7 +274,7 @@ async def plan(state: AgentState, llm: Any, tools: List, worker_docs: str, logge
 
     research_instruction = ""
     needs_citations = any(term in query.lower() for term in ["cite", "paper", "reference", "literature", "arxiv", "publication"])
-    if arxiv_consulted:
+    if arxiv_consulted and "research" in worker_types:
         if needs_citations:
             research_instruction = """## MANDATORY: Research Worker Required
 
@@ -284,6 +305,8 @@ The consultation above found criteria for your query.
     template = PROMPT if role_prompts else MINIMAL_PROMPT
     prompt = template.format(
         worker_docs=worker_docs,
+        worker_summary=_worker_summary(worker_types),
+        worker_type_options="|".join(worker_types),
         tool_docs=f"Available tools:\n{tool_docs_str}" if tool_docs_str else "",
         context=context,
         research_instruction=research_instruction,

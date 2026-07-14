@@ -51,5 +51,6 @@ APPROVAL = {
 }
 
 
-def get_worker_docs():
-    return "\n".join(f"- {name}: {prompt}" for name, prompt in WORKERS.items())
+def get_worker_docs(worker_types=None):
+    names = worker_types or WORKERS
+    return "\n".join(f"- {name}: {WORKERS[name]}" for name in names)

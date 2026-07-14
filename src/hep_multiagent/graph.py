@@ -50,8 +50,12 @@ def build_graph(
     structured_worker_output: bool = False,
     run_local_tool_prototyping: bool = False,
     role_prompts: bool = True,
+    planner_consultations: bool = True,
+    enabled_worker_types: tuple[str, ...] = tuple(WORKERS),
     diagnostics: Any = None,
 ):
+    active_workers = {name: WORKERS[name] for name in enabled_worker_types}
+
     async def worker_node(s):
         plan = s.get("plan")
         step_id = s.get("current_step_id")
@@ -78,7 +82,7 @@ def build_graph(
                 s,
                 llm,
                 tools,
-                WORKERS,
+                active_workers,
                 artifact_extensions,
                 get_output_dir(),
                 logger,
@@ -127,8 +131,18 @@ def build_graph(
                 inputs.append(f"Feedback: {s['planning_feedback']}")
             logger.log("Planner", "\n".join(inputs))
         with diagnostics.agent_timer("planner") if diagnostics else nullcontext():
-            worker_docs = get_worker_docs() if role_prompts else ", ".join(WORKERS)
-            result = await planner.plan(s, llm, tools, worker_docs, logger, diagnostics, role_prompts)
+            worker_docs = get_worker_docs(enabled_worker_types) if role_prompts else ", ".join(enabled_worker_types)
+            result = await planner.plan(
+                s,
+                llm,
+                tools,
+                worker_docs,
+                logger,
+                diagnostics,
+                role_prompts,
+                planner_consultations,
+                enabled_worker_types,
+            )
         if logger:
             plan = result.get("plan")
             if plan:
@@ -137,7 +151,7 @@ def build_graph(
                 logger.log("Planner", f"Failed: {result['error']}")
         if diagnostics:
             if result.get("plan"):
-                diagnostics.validate_plan(result["plan"], list(WORKERS))
+                diagnostics.validate_plan(result["plan"], list(enabled_worker_types))
                 diagnostics.event("planner", "completed", f"Created {len(result['plan'].get('steps', []))}-step plan")
             else:
                 diagnostics.event("planner", "failed", result.get("error", "Planner failed"))
@@ -226,9 +240,9 @@ def build_graph(
     })
     graph.add_edge("planner", "supervisor")
 
-    worker_routes = {name: "worker" for name in WORKERS}
+    worker_routes = {name: "worker" for name in active_workers}
     worker_routes["supervisor"] = "supervisor"
-    graph.add_conditional_edges("router", lambda s: router.route_to_worker(s, WORKERS), worker_routes)
+    graph.add_conditional_edges("router", lambda s: router.route_to_worker(s, active_workers), worker_routes)
 
     graph.add_edge("worker", "supervisor")
     graph.add_edge("synthesis", END)
