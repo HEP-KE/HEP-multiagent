@@ -1,6 +1,9 @@
+from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.tools import tool
 
 from ..features import validators as validate
+from ..features.arxiv_fetch import download_full_text, fetch_metadata, read_chunk, search
+from ..features.citation_builder import cite as build_citation
 
 
 PROMPT = """You are a research worker. Your job: search arxiv, get paper metadata, cite papers.
@@ -36,7 +39,7 @@ Call log_issue(component, problem, suggestion) when you:
 - Encounter a tool failure or unexpected result
 - Notice an opportunity for a new tool that would help
 
-REQUIRED: final_answer must include ALL outputs produced (paper IDs, citation keys, file paths) so downstream workers can use them."""
+REQUIRED: the completion tool must include ALL outputs produced (paper IDs, citation keys, file paths) so downstream workers can use them."""
 
 
 @tool
@@ -52,13 +55,12 @@ def web_search(query: str) -> str:
     try:
         validate.non_empty(query, "query")
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from langchain_community.tools import DuckDuckGoSearchRun
         return DuckDuckGoSearchRun().run(query)
     except Exception as e:
-        return f"Search failed: {e}"
+        return f"Error: Search failed: {e}"
 
 
 @tool
@@ -76,10 +78,9 @@ def search_arxiv_abstracts(query: str, max_results: int = 5) -> str:
         validate.non_empty(query, "query")
         validate.int_range(max_results, 1, 50, "max_results")
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from ..features.arxiv_fetch import search
         results = search(query, max_results)
         if not results:
             return f"No papers found for: {query}"
@@ -88,7 +89,7 @@ def search_arxiv_abstracts(query: str, max_results: int = 5) -> str:
             lines.append(f"[{p['arxiv_id']}] {p['title']}\nAbstract: {p['abstract'][:300]}...\n")
         return "\n".join(lines)
     except Exception as e:
-        return f"Search failed: {e}"
+        return f"Error: Search failed: {e}"
 
 
 @tool
@@ -104,13 +105,12 @@ def get_arxiv_metadata(arxiv_id: str) -> str:
     try:
         validate.arxiv_id(arxiv_id)
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from ..features.arxiv_fetch import fetch_metadata
         meta = fetch_metadata(arxiv_id)
         if not meta:
-            return f"Paper {arxiv_id} not found"
+            return f"Error: Paper {arxiv_id} not found"
         return (
             f"arXiv ID: {meta['arxiv_id']}\n"
             f"Title: {meta['title']}\n"
@@ -119,7 +119,7 @@ def get_arxiv_metadata(arxiv_id: str) -> str:
             f"Abstract: {meta['abstract']}"
         )
     except Exception as e:
-        return f"Metadata fetch failed: {e}"
+        return f"Error: Metadata fetch failed: {e}"
 
 
 @tool
@@ -137,14 +137,13 @@ def download_arxiv_full_text(arxiv_id: str, output_dir: str) -> str:
         validate.arxiv_id(arxiv_id)
         validate.dir_exists(output_dir)
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from ..features.arxiv_fetch import download_full_text
         txt_path = download_full_text(arxiv_id, output_dir)
         return f"Downloaded: {txt_path}"
     except Exception as e:
-        return f"Download failed: {e}"
+        return f"Error: Download failed: {e}"
 
 
 @tool
@@ -164,17 +163,16 @@ def read_arxiv_chunk(filepath: str, start: int = 0, length: int = 10000) -> str:
         validate.non_negative_int(start, "start")
         validate.positive_int(length, "length")
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from ..features.arxiv_fetch import read_chunk
         result = read_chunk(filepath, start, length)
         info = f"[chars {result['start']}-{result['end']} of {result['file_size']}]"
         if result['has_more']:
             info += f" (more available, next start={result['end']})"
         return f"{info}\n\n{result['text']}"
     except Exception as e:
-        return f"Read failed: {e}"
+        return f"Error: Read failed: {e}"
 
 
 @tool
@@ -196,19 +194,18 @@ def cite(arxiv_id: str, note: str, bib_path: str) -> str:
         validate.non_empty(bib_path, "bib_path")
         validate.extension(bib_path, [".bib"])
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        from ..features.citation_builder import cite as do_cite
-        result = do_cite(arxiv_id, note, bib_path)
+        result = build_citation(arxiv_id, note, bib_path)
         if not result["success"]:
-            return result["error"]
+            return f"Error: {result['error']}"
         return f"Cited: {result['title']} (\\cite{{{result['key']}}})"
     except Exception as e:
-        return f"Citation failed: {e}"
+        return f"Error: Citation failed: {e}"
 
 
-def get_research_tools():
+def get_research_tools(output_dir=None, available_tools=None):
     return [
         web_search,
         search_arxiv_abstracts,

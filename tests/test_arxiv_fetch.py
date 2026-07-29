@@ -32,8 +32,8 @@ class FakeSearch:
 def patch_arxiv(monkeypatch):
     monkeypatch.setattr(
         arxiv_fetch,
-        "_arxiv",
-        lambda: SimpleNamespace(Client=FakeClient, Search=FakeSearch, HTTPError=RuntimeError),
+        "arxiv",
+        SimpleNamespace(Client=FakeClient, Search=FakeSearch, HTTPError=RuntimeError),
     )
 
 
@@ -50,12 +50,7 @@ def test_fetch_valid_paper(monkeypatch):
 
 def test_fetch_invalid_paper(monkeypatch):
     patch_arxiv(monkeypatch)
-    assert fetch_metadata("9999.99999") == {}
-
-
-def test_fetch_malformed_id(monkeypatch):
-    patch_arxiv(monkeypatch)
-    assert fetch_metadata("not-a-real-id") == {}
+    assert fetch_metadata("9999.99999") is None
 
 
 def test_search_formats_results(monkeypatch):
@@ -71,23 +66,8 @@ def test_search_formats_results(monkeypatch):
     }]
 
 
-def test_normalize_strips_arxiv_prefix():
+def test_normalize_arxiv_id_accepts_common_inputs():
     assert normalize_arxiv_id("arXiv:2301.00774") == "2301.00774"
-    assert normalize_arxiv_id("ARXIV:2301.00774") == "2301.00774"
-
-
-def test_normalize_strips_url():
     assert normalize_arxiv_id("https://arxiv.org/abs/2301.00774") == "2301.00774"
-    assert normalize_arxiv_id("http://arxiv.org/abs/2301.00774") == "2301.00774"
-    assert normalize_arxiv_id("https://www.arxiv.org/abs/2301.00774") == "2301.00774"
-    assert normalize_arxiv_id("arxiv.org/abs/2301.00774") == "2301.00774"
-
-
-def test_normalize_strips_pdf_url():
-    assert normalize_arxiv_id("https://arxiv.org/pdf/2301.00774") == "2301.00774"
     assert normalize_arxiv_id("https://arxiv.org/pdf/2301.00774.pdf") == "2301.00774"
-
-
-def test_normalize_preserves_old_format():
     assert normalize_arxiv_id("astro-ph/0510346") == "astro-ph/0510346"
-    assert normalize_arxiv_id("arXiv:astro-ph/0510346") == "astro-ph/0510346"

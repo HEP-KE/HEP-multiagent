@@ -34,6 +34,8 @@ def structured_final_answer(
     artifacts: Any,
     observations: Any,
     limitations: Any,
+    claims: Any = None,
+    evidence: Any = None,
 ) -> dict:
     """Call this when the task is complete and structured worker output is required.
 
@@ -43,9 +45,11 @@ def structured_final_answer(
         artifacts: File paths this worker created or used
         observations: Short factual outputs downstream agents may use
         limitations: Known failures, missing data, or uncertainty
+        claims: Specific factual claims produced by this worker
+        evidence: Tool call IDs, artifact paths, citation keys, or validation names supporting the claims
 
     Returns:
-        Structured outcome for diagnostics and downstream synthesis.
+        Structured outcome for downstream synthesis.
     """
     try:
         if status not in ("success", "failed"):
@@ -57,6 +61,12 @@ def structured_final_answer(
             raise ValueError("observations must be a list")
         if not isinstance(limitations, list):
             raise ValueError("limitations must be a list")
+        claims = claims or []
+        evidence = evidence or []
+        if not isinstance(claims, list):
+            raise ValueError("claims must be a list")
+        if not isinstance(evidence, list):
+            raise ValueError("evidence must be a list")
     except ValueError as e:
         return {"error": f"{e}. Retry with valid parameters."}
 
@@ -66,6 +76,8 @@ def structured_final_answer(
         "artifacts": artifacts,
         "observations": observations,
         "limitations": limitations,
+        "claims": claims,
+        "evidence": evidence,
     }
 
 
@@ -82,7 +94,7 @@ def list_output_files(output_dir: str) -> str:
     try:
         validate.dir_exists(output_dir)
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     files = sorted(os.listdir(output_dir))
     if not files:

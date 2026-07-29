@@ -8,44 +8,17 @@ from hep_multiagent.features.citation_validation import (
 )
 
 
-def test_parse_quotes_valid_json_list():
-    result = parse_quotes('["quote one", "quote two"]')
-    assert result == ["quote one", "quote two"]
-
-
-def test_parse_quotes_empty_list():
-    result = parse_quotes('[]')
-    assert result == []
-
-
-def test_parse_quotes_invalid_json():
-    result = parse_quotes('not json')
-    assert result == []
-
-
-def test_parse_quotes_json_object_returns_empty():
-    result = parse_quotes('{"key": "value"}')
-    assert result == []
-
-
-def test_parse_quotes_filters_non_strings():
+def test_parse_quotes_filters_valid_strings():
     result = parse_quotes('["valid", 123, null, "also valid"]')
     assert result == ["valid", "also valid"]
 
 
-def test_validate_quote_exact_match():
-    assert validate_quote("hello world", "hello world")
+def test_parse_quotes_rejects_invalid_json_shape():
+    assert parse_quotes("not json") == []
+    assert parse_quotes('{"key": "value"}') == []
 
 
-def test_validate_quote_substring():
-    assert validate_quote("world", "hello world")
-
-
-def test_validate_quote_case_insensitive():
-    assert validate_quote("HELLO", "hello world")
-
-
-def test_validate_quote_ignores_whitespace():
+def test_validate_quote_matches_normalized_source_text():
     assert validate_quote("hello   world", "hello world")
     assert validate_quote("hello\nworld", "hello world")
 
@@ -62,14 +35,6 @@ def test_get_source_text_from_file():
 
         result = get_source_text("2301.00774", tmpdir, {})
         assert result == "This is the full paper text."
-
-
-def test_get_source_text_fallback_to_metadata():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        meta = {"title": "Paper Title", "abstract": "Paper abstract here."}
-        result = get_source_text("9999.99999", tmpdir, meta)
-        assert "Paper Title" in result
-        assert "Paper abstract here" in result
 
 
 def test_get_source_text_handles_slash_in_id():

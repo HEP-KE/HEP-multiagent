@@ -57,9 +57,6 @@ class MarkdownLogger:
     def thinking(self) -> None:
         self._write_line("[Thinking...]")
 
-    def iteration(self, current: int, total: int) -> None:
-        self._write_line(f"[Iteration {current}/{total}]")
-
     def thought(self, content: str) -> None:
         if content:
             self._write_line(f"[Thought] {content}")

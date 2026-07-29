@@ -1,7 +1,7 @@
 from ..features.agent_tools import list_output_files
 
 
-def get_data_tools():
+def get_data_tools(output_dir=None, available_tools=None):
     return [list_output_files]
 
 
@@ -23,11 +23,11 @@ Do NOT: analyze data (compute worker), create plots (viz worker), search papers 
 
 ## Data Integrity
 - Fetch REAL data unless task explicitly requests mock data
-- If data unavailable, fail clearly: final_answer("failed", "reason")
+- If data unavailable, call the completion tool with status "failed" and the reason
 
 ## Report Issues
 Call log_issue(component, problem, suggestion) when you:
 - Encounter a tool or MCP server failure
 - Notice an opportunity for a new data tool
 
-REQUIRED: final_answer must include ALL outputs produced (file paths, dataset names, identifiers) so downstream workers can use them."""
+REQUIRED: the completion tool must include ALL outputs produced (file paths, dataset names, identifiers) so downstream workers can use them."""

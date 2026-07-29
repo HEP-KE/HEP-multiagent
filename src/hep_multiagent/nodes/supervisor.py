@@ -4,11 +4,9 @@ from ..state import AgentState, get_ready_steps, is_plan_complete, has_plan_fail
 def supervise(state: AgentState) -> dict:
     plan = state.get("plan")
 
+    if state.get("error"):
+        return {"next_action": "synthesize"}
     if plan is None:
-        return {"next_action": "plan"}
-    if state.get("user_approved") is None and plan["status"] == "draft":
-        return {"next_action": "await_approval"}
-    if state.get("user_approved") is False:
         return {"next_action": "plan"}
     if is_plan_complete(plan):
         return {"next_action": "synthesize"}
@@ -18,8 +16,8 @@ def supervise(state: AgentState) -> dict:
         return {"next_action": "execute"}
     if has_stuck_steps(plan):
         return {"next_action": "synthesize"}
-    return {"next_action": "synthesize"}
+    raise RuntimeError("Plan has no ready, running, completed, or failed steps.")
 
 
 def route_action(state: AgentState) -> str:
-    return state.get("next_action", "end")
+    return state["next_action"]

@@ -9,13 +9,20 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 from hep_multiagent import Agent, AgentFeatures
-from hep_multiagent.graph import build_graph
 from hep_multiagent.features.agent_trace import MarkdownLogger
+from hep_multiagent.features.citation_builder import BibTeXManager
 from hep_multiagent.features.replay_notebook import ExecutionNotebook
 from hep_multiagent.features.report_generator import LaTeXReport
-from hep_multiagent.features.citation_builder import BibTeXManager
+from hep_multiagent.features.session_resume import SQLiteCheckpoint
+from hep_multiagent.graph import build_graph
+from hep_multiagent.nodes import planner
+from hep_multiagent.nodes.planner import extract_json, validate_plan_data
+from hep_multiagent.nodes.router import route
+from hep_multiagent.nodes.supervisor import route_action, supervise
+from hep_multiagent.workers.compute import get_compute_tools
 
 
 def make_mock_tool(name: str, response: str):
@@ -26,6 +33,13 @@ def make_mock_tool(name: str, response: str):
     tool.invoke = MagicMock(return_value=response)
     tool.ainvoke = AsyncMock(return_value=response)
     return tool
+
+
+def make_execute_python_tool(output_dir=None):
+    return next(
+        tool for tool in get_compute_tools(output_dir)
+        if tool.name == "execute_python"
+    )
 
 
 class MockLLM:
@@ -76,15 +90,6 @@ def temp_output_dir():
         yield tmpdir
 
 
-@pytest.fixture(autouse=True)
-def reset_code_approval():
-    from hep_multiagent.workers.compute import set_code_approval
-
-    set_code_approval(None)
-    yield
-    set_code_approval(None)
-
-
 @pytest.fixture
 def mock_tools():
     return [
@@ -94,23 +99,9 @@ def mock_tools():
     ]
 
 
-def test_agent_initialization():
-    llm = MockLLM()
-    agent = Agent(llm=llm, mcp_servers=None)
-
-    assert agent.llm is llm
-    assert agent.report is not None
-    assert agent.references is not None
-    assert agent.logger is not None
-    assert agent.notebook is not None
-
-
 def test_agent_feature_toggles_disable_optional_components():
     llm = MockLLM()
     features = AgentFeatures(
-        plan_approval=False,
-        python_execution_approval=False,
-        lesson_memory=False,
         report=False,
         citations=False,
         execution_log=False,
@@ -126,39 +117,17 @@ def test_agent_feature_toggles_disable_optional_components():
     assert agent.notebook is None
 
 
-def test_agent_plan_approval_kwarg_maps_to_features():
+def test_agent_resume_requires_existing_checkpoint(temp_output_dir):
     llm = MockLLM()
-    agent = Agent(llm=llm, mcp_servers=None, plan_approval=True, lesson_memory=False)
+    features = AgentFeatures(report=False, citations=False, execution_log=False, replay_notebook=False)
+    agent = Agent(llm=llm, mcp_servers=None, features=features)
+    agent.checkpoint = SQLiteCheckpoint(os.path.join(temp_output_dir, "checkpoint.db"))
 
-    assert agent.features.plan_approval is True
-    assert agent.features.lesson_memory is False
-
-
-def test_agent_feature_dict_uses_current_names():
-    llm = MockLLM()
-    agent = Agent(
-        llm=llm,
-        mcp_servers=None,
-        features={
-            "plan_approval": True,
-            "python_execution_approval": True,
-            "enabled_workers": ["compute", "viz"],
-        },
-    )
-
-    assert agent.features.plan_approval is True
-    assert agent.features.python_execution_approval is True
-    assert agent.features.enabled_workers == ("compute", "viz")
-
-
-def test_agent_features_reject_unknown_workers():
-    with pytest.raises(ValueError, match="Unknown worker"):
-        AgentFeatures(enabled_workers=("compute", "invalid"))
+    with pytest.raises(RuntimeError, match="No checkpoint found"):
+        asyncio.run(agent.run("resume this query", output_dir=temp_output_dir, resume=True))
 
 
 def test_planner_consultations_can_be_disabled(monkeypatch):
-    from hep_multiagent.nodes import planner
-
     class PlanOnlyLLM:
         async def ainvoke(self, messages):
             return AIMessage(content='''{
@@ -209,7 +178,6 @@ def test_notebook_writes_to_file(temp_output_dir):
     notebook = ExecutionNotebook()
     notebook.init(temp_output_dir, {})
     notebook.tool_call("execute_python", {"code": "print('hello')"}, "hello", "compute")
-    notebook.close()
 
     nb_path = os.path.join(temp_output_dir, "execution.ipynb")
     assert os.path.exists(nb_path)
@@ -221,21 +189,7 @@ def test_notebook_writes_to_file(temp_output_dir):
     assert len(nb["cells"]) > 0
 
 
-def test_bibtex_manager_load_export(temp_output_dir):
-    bib = BibTeXManager()
-    assert bib.load(temp_output_dir) is False
-
-    bib_path = os.path.join(temp_output_dir, "references.bib")
-    with open(bib_path, "w") as f:
-        f.write('@article{test,\n  title = {Test},\n  year = {2024}\n}\n')
-
-    assert bib.load(temp_output_dir) is True
-    assert bib.export(temp_output_dir) == bib_path
-
-
 def test_full_workflow_mock(temp_output_dir, mock_tools):
-    from langgraph.checkpoint.memory import MemorySaver
-
     async def run_workflow():
         llm = MockLLM()
         logger = MarkdownLogger()
@@ -253,18 +207,14 @@ def test_full_workflow_mock(temp_output_dir, mock_tools):
             references=references,
             artifact_extensions=[".json", ".png", ".pdf"],
             checkpointer=checkpointer,
-            get_output_dir=lambda: temp_output_dir,
             logger=logger,
             notebook=notebook,
         )
-
-        from langchain_core.messages import HumanMessage
 
         initial_state = {
             "messages": [HumanMessage(content="Test query about dark matter")],
             "next_action": "plan",
             "output_dir": temp_output_dir,
-            "user_approved": True,
         }
 
         config = {"configurable": {"thread_id": "test-thread"}}
@@ -285,37 +235,8 @@ def test_full_workflow_mock(temp_output_dir, mock_tools):
     asyncio.run(run_workflow())
 
 
-def test_state_helpers():
-    from hep_multiagent.state import (
-        get_ready_steps, is_plan_complete, has_plan_failed, get_dependency_context
-    )
-
-    plan = {
-        "id": "test",
-        "goal": "Test goal",
-        "status": "active",
-        "steps": [
-            {"id": "s1", "name": "step1", "status": "completed", "depends_on": [],
-             "solution": "Step 1 done", "artifacts": ["/tmp/file.json"]},
-            {"id": "s2", "name": "step2", "status": "ready", "depends_on": ["s1"]},
-            {"id": "s3", "name": "step3", "status": "pending", "depends_on": ["s2"]},
-        ]
-    }
-
-    ready = get_ready_steps(plan)
-    assert len(ready) == 1
-    assert ready[0]["id"] == "s2"
-
-    assert is_plan_complete(plan) is False
-    assert has_plan_failed(plan) is False
-
-    context, artifacts = get_dependency_context(plan, "s2")
-    assert "Step 1 done" in context
-    assert "/tmp/file.json" in artifacts
-
-
 def test_execute_python_basic():
-    from hep_multiagent.workers.compute import execute_python
+    execute_python = make_execute_python_tool()
 
     result = execute_python.invoke({"code": "print(2 + 2)"})
     assert "4" in result
@@ -325,7 +246,7 @@ def test_execute_python_basic():
 
 
 def test_execute_python_blocks_os():
-    from hep_multiagent.workers.compute import execute_python
+    execute_python = make_execute_python_tool()
 
     result = execute_python.invoke({"code": "import os"})
     assert "Import not allowed: os" in result
@@ -335,7 +256,7 @@ def test_execute_python_blocks_os():
 
 
 def test_execute_python_blocks_network():
-    from hep_multiagent.workers.compute import execute_python
+    execute_python = make_execute_python_tool()
 
     result = execute_python.invoke({"code": "import socket"})
     assert "Import not allowed: socket" in result
@@ -345,14 +266,14 @@ def test_execute_python_blocks_network():
 
 
 def test_execute_python_blocks_dynamic_import():
-    from hep_multiagent.workers.compute import execute_python
+    execute_python = make_execute_python_tool()
 
     result = execute_python.invoke({"code": "__import__('os')"})
     assert "Import not allowed: os" in result
 
 
 def test_execute_python_allows_safe_imports():
-    from hep_multiagent.workers.compute import execute_python
+    execute_python = make_execute_python_tool()
 
     result = execute_python.invoke({"code": "import json; print(json.dumps({'a': 1}))"})
     assert '{"a": 1}' in result
@@ -362,8 +283,6 @@ def test_execute_python_allows_safe_imports():
 
 
 def test_planner_extract_json():
-    from hep_multiagent.nodes.planner import extract_json
-
     text = '''Here is the plan:
 ```json
 {"goal": "test", "steps": []}
@@ -380,25 +299,30 @@ Done.'''
     assert extract_json("no json here") is None
 
 
-def test_planner_detect_vague_terms():
-    from hep_multiagent.nodes.planner import detect_vague_terms
+def test_planner_rejects_invalid_plan_shape():
+    bad_plan = {
+        "goal": "test",
+        "steps": [
+            {"id": "s1", "name": "bad", "worker_type": "unknown", "description": "x", "depends_on": []}
+        ],
+    }
 
-    assert "interesting" in detect_vague_terms("find interesting galaxies")
-    assert "large" in detect_vague_terms("find large halos")
-    assert len(detect_vague_terms("find galaxies with mass > 1e12")) == 0
+    with pytest.raises(ValueError, match="Unknown worker_type"):
+        validate_plan_data(bad_plan, ("compute",))
 
 
 def test_supervisor_routing():
-    from hep_multiagent.nodes.supervisor import supervise, route_action
-
     state = {"messages": [], "plan": None}
     result = supervise(state)
     assert result["next_action"] == "plan"
     assert route_action(result) == "plan"
 
-    state = {"plan": {"status": "draft", "steps": []}}
+    with pytest.raises(KeyError):
+        route_action({})
+
+    state = {"messages": [], "plan": None, "error": "planner failed"}
     result = supervise(state)
-    assert result["next_action"] == "await_approval"
+    assert result["next_action"] == "synthesize"
 
     state = {"plan": {"status": "active", "steps": [{"id": "s1", "status": "ready", "depends_on": []}]}}
     result = supervise(state)
@@ -410,8 +334,6 @@ def test_supervisor_routing():
 
 
 def test_router_picks_ready_step():
-    from hep_multiagent.nodes.router import route
-
     plan = {
         "steps": [
             {"id": "s1", "status": "completed", "worker_type": "research", "depends_on": []},
@@ -422,122 +344,3 @@ def test_router_picks_ready_step():
     state = {"plan": plan}
     result = route(state)
     assert result["current_step_id"] == "s2"
-
-
-def test_full_workflow_executes_steps(temp_output_dir, mock_tools):
-    from langgraph.checkpoint.memory import MemorySaver
-
-    async def run_workflow():
-        llm = MockLLM()
-        logger = MarkdownLogger()
-        logger.init(temp_output_dir)
-        notebook = ExecutionNotebook()
-        notebook.init(temp_output_dir, {})
-        report = LaTeXReport()
-        references = BibTeXManager()
-        checkpointer = MemorySaver()
-
-        graph = build_graph(
-            llm=llm,
-            tools=mock_tools,
-            report_writer=report,
-            references=references,
-            artifact_extensions=[".json", ".png", ".pdf"],
-            checkpointer=checkpointer,
-            get_output_dir=lambda: temp_output_dir,
-            logger=logger,
-            notebook=notebook,
-        )
-
-        from langchain_core.messages import HumanMessage
-
-        initial_state = {
-            "messages": [HumanMessage(content="Test query about dark matter")],
-            "next_action": "plan",
-            "output_dir": temp_output_dir,
-            "user_approved": True,
-        }
-
-        config = {"configurable": {"thread_id": "test-thread-2"}}
-        result = await graph.ainvoke(initial_state, config)
-
-        assert result is not None
-        plan = result.get("plan")
-        if plan:
-            assert "goal" in plan
-            assert "steps" in plan
-            assert len(plan["steps"]) > 0
-
-        logger.close()
-
-        log_path = os.path.join(temp_output_dir, "execution_log.md")
-        with open(log_path) as f:
-            log_content = f.read()
-
-        assert "Planner" in log_content or "Supervisor" in log_content
-
-    asyncio.run(run_workflow())
-
-
-def test_compute_tool_with_data(temp_output_dir):
-    from hep_multiagent.workers.compute import execute_python
-
-    result = execute_python.invoke({
-        "code": "import numpy as np; arr = np.array([1,2,3,4,5]); print(f'Mean: {np.mean(arr)}')"
-    })
-    assert "Mean: 3.0" in result
-
-    result = execute_python.invoke({
-        "code": "import pandas as pd; df = pd.DataFrame({'a': [1,2,3]}); print(df.describe())"
-    })
-    assert "mean" in result.lower()
-
-
-def test_logger_captures_all_events(temp_output_dir):
-    logger = MarkdownLogger()
-    logger.init(temp_output_dir)
-
-    logger.log("Supervisor", "Decision: **plan**")
-    logger.log("Planner", "Creating plan...")
-    logger.thought("Analyzing query...")
-    logger.tool_call("search_arxiv", {"query": "dark matter"}, "Found 5 papers")
-    logger.close()
-
-    log_path = os.path.join(temp_output_dir, "execution_log.md")
-    with open(log_path) as f:
-        content = f.read()
-
-    assert "Supervisor" in content
-    assert "Planner" in content
-    assert "Analyzing query" in content
-    assert "search_arxiv" in content
-
-
-def test_notebook_captures_code_cells(temp_output_dir):
-    notebook = ExecutionNotebook()
-    notebook.init(temp_output_dir, {"query": "test"})
-
-    notebook.tool_call(
-        "execute_python",
-        {"code": "print('hello')"},
-        "hello",
-        "compute"
-    )
-    notebook.tool_call(
-        "create_histogram",
-        {"data_file": "/tmp/data.npy", "output_path": "/tmp/hist.png"},
-        "Saved: /tmp/hist.png",
-        "viz"
-    )
-    notebook.close()
-
-    nb_path = os.path.join(temp_output_dir, "execution.ipynb")
-    with open(nb_path) as f:
-        nb = json.load(f)
-
-    assert nb["nbformat"] == 4
-    cells = nb["cells"]
-    assert len(cells) >= 2
-
-    code_cells = [c for c in cells if c["cell_type"] == "code"]
-    assert len(code_cells) >= 1

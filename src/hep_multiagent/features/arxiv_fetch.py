@@ -1,12 +1,12 @@
+import logging
 import os
 import re
 
+import arxiv
+from pypdf import PdfReader
+import requests
+
 from . import validators as validate
-
-
-def _arxiv():
-    import arxiv
-    return arxiv
 
 
 def normalize_arxiv_id(arxiv_id: str) -> str:
@@ -18,15 +18,14 @@ def normalize_arxiv_id(arxiv_id: str) -> str:
     return s
 
 
-def fetch_metadata(arxiv_id: str) -> dict:
-    arxiv = _arxiv()
+def fetch_metadata(arxiv_id: str) -> dict | None:
     clean_id = normalize_arxiv_id(arxiv_id)
     try:
         paper = next(arxiv.Client().results(arxiv.Search(id_list=[clean_id])), None)
     except arxiv.HTTPError:
-        return {}
+        return None
     if not paper:
-        return {}
+        return None
     return {
         "arxiv_id": clean_id,
         "title": paper.title,
@@ -38,7 +37,6 @@ def fetch_metadata(arxiv_id: str) -> dict:
 
 
 def search(query: str, max_results: int = 5) -> list:
-    arxiv = _arxiv()
     client = arxiv.Client()
     results = client.results(arxiv.Search(query=query, max_results=max_results))
     papers = []
@@ -54,7 +52,6 @@ def search(query: str, max_results: int = 5) -> list:
 
 
 def download_pdf(arxiv_id: str, output_dir: str) -> str:
-    import requests
     os.makedirs(output_dir, exist_ok=True)
 
     url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
@@ -70,30 +67,13 @@ def download_pdf(arxiv_id: str, output_dir: str) -> str:
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    import logging
     logging.getLogger("pypdf").setLevel(logging.ERROR)
 
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(pdf_path)
-        pages = []
-        for i, page in enumerate(reader.pages, 1):
-            pages.append(f"--- Page {i} ---\n{page.extract_text()}")
-        return "\n\n".join(pages)
-    except ImportError:
-        pass
-
-    try:
-        import fitz
-        pages = []
-        with fitz.open(pdf_path) as doc:
-            for i, page in enumerate(doc, 1):
-                pages.append(f"--- Page {i} ---\n{page.get_text()}")
-        return "\n\n".join(pages)
-    except ImportError:
-        pass
-
-    raise ImportError("Install pypdf or pymupdf for PDF text extraction")
+    reader = PdfReader(pdf_path)
+    pages = []
+    for i, page in enumerate(reader.pages, 1):
+        pages.append(f"--- Page {i} ---\n{page.extract_text()}")
+    return "\n\n".join(pages)
 
 
 def download_full_text(arxiv_id: str, output_dir: str) -> str:

@@ -1,17 +1,17 @@
 import re
-from typing import List, Any
+from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 
-def format_attempts(attempts: List[dict]) -> str:
+def format_attempts(attempts: list[dict]) -> str:
     if not attempts:
         return ""
     parts = [f"## Attempt {i}\n{a.get('output', '')}\n{a.get('error', '')}" for i, a in enumerate(attempts, 1)]
     return "# Previous Attempts\n" + "\n".join(parts) + "\n\nAnalyze what went wrong and try a different approach."
 
 
-def extract_artifacts(text: str, extensions: List[str]) -> List[str]:
+def extract_artifacts(text: str, extensions: list[str]) -> list[str]:
     artifacts = []
     for ext in extensions:
         pattern = r'[\w/.-]+' + ext.replace('.', r'\.')
@@ -22,6 +22,10 @@ def extract_artifacts(text: str, extensions: List[str]) -> List[str]:
 def normalize_tool_result(result) -> str:
     if result is None:
         return ""
+    if getattr(result, "status", None) == "error":
+        return f"Error: {getattr(result, 'content', result)}"
+    if hasattr(result, "content"):
+        return str(result.content)
     if isinstance(result, list):
         return "\n".join(item.get("text", str(item)) if isinstance(item, dict) else str(item) for item in result)
     if isinstance(result, dict) and result.get("type") == "text":
@@ -29,7 +33,7 @@ def normalize_tool_result(result) -> str:
     return str(result)
 
 
-async def _invoke_tool(tools: List, name: str, args: dict) -> str:
+async def _invoke_tool(tools: list, name: str, args: dict) -> str:
     for tool in tools:
         if tool.name == name:
             try:
@@ -39,21 +43,18 @@ async def _invoke_tool(tools: List, name: str, args: dict) -> str:
             except Exception as e:
                 return f"Error: {e}"
             return normalize_tool_result(result)
-    return f"Tool '{name}' not found"
+    return f"Error: Tool '{name}' not found"
 
 
 def build_worker_prompt(
     task: str,
     output_dir: str,
-    artifacts: List[str],
+    artifacts: list[str],
     context: str,
-    previous_attempts: List[dict],
-    research_context: str = None,
-    lessons: str = "",
+    previous_attempts: list[dict],
+    research_context: str | None = None,
 ) -> str:
     parts = [f"# Task\n{task}", f"# Output Directory\nSave files to: {output_dir}"]
-    if lessons:
-        parts.append(lessons)
     if research_context:
         parts.append(f"# Research Context (already gathered - use directly)\n{research_context}")
     if artifacts:
@@ -68,7 +69,7 @@ def build_worker_prompt(
 
 async def run_consultation(
     llm: Any,
-    tools: List,
+    tools: list,
     prompt: str,
     question: str,
     max_iterations: int = 10,

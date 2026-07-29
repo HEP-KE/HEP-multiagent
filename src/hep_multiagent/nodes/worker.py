@@ -1,15 +1,13 @@
 import json
-import time
-from typing import Any, List
+from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
-from ..config import WORKER_TOOLS
-from ..state import AgentState, get_dependency_context
-from ..worker import build_worker_prompt, extract_artifacts, normalize_tool_result
+from ..config import get_worker_tools
 from ..features.agent_tools import final_answer, structured_final_answer
 from ..features.issue_tracker import log_issue
-from ..features.run_local_tools import get_run_local_tools
+from ..state import AgentState, get_dependency_context
+from ..worker import build_worker_prompt, extract_artifacts, normalize_tool_result
 
 MAX_RETRIES = 2
 MAX_ITERATIONS = 15
@@ -18,78 +16,70 @@ MAX_ITERATIONS = 15
 async def execute(
     state: AgentState,
     llm: Any,
-    tools: List,
+    tools: list,
     workers: dict,
-    artifact_extensions: List[str],
-    default_output_dir: str,
+    artifact_extensions: list[str],
     logger: Any = None,
     notebook: Any = None,
-    lessons: str = "",
     issue_tracking: bool = True,
-    structured_worker_output: bool = False,
-    run_local_tool_prototyping: bool = False,
-    role_prompts: bool = True,
-    diagnostics: Any = None,
+    structured_worker_output: bool = True,
+    recorder: Any = None,
+    tool_sources: dict | None = None,
 ) -> dict:
-    plan = state.get("plan")
-    step_id = state.get("current_step_id")
-    step = next((s for s in plan["steps"] if s["id"] == step_id), None)
-    if not step:
-        return {}
+    plan = state["plan"]
+    step_id = state["current_step_id"]
+    for step in plan["steps"]:
+        if step["id"] == step_id:
+            break
+    else:
+        raise RuntimeError(f"Current step not found: {step_id}")
 
     context, artifacts = get_dependency_context(plan, step_id)
-    output_dir = state.get("output_dir", default_output_dir)
+    output_dir = state["output_dir"]
     previous_attempts = step.get("attempts", [])
-    research_context = plan.get("research_context")
-    agent_name = f"{step['worker_type']}_worker"
-
     worker_tools = _build_worker_tools(
         tools,
         step["worker_type"],
+        output_dir,
         issue_tracking,
         structured_worker_output,
-        run_local_tool_prototyping,
     )
-    if diagnostics:
-        diagnostics.assign_step(agent_name, step_id, [t.name for t in worker_tools])
 
-    if role_prompts:
-        prompt = workers.get(step["worker_type"]) or workers.get("data", "")
-    else:
-        prompt = f"You are the {step['worker_type']} worker."
+    prompt = workers[step["worker_type"]]
     if structured_worker_output:
         prompt += (
             "\n\nCompletion requirement: call structured_final_answer exactly once when done. "
             "Use artifacts for files created or used, observations for short factual outputs, "
-            "and limitations for failures, missing data, or uncertainty."
+            "limitations for failures, missing data, or uncertainty, and claims/evidence for factual results."
         )
-    task = build_worker_prompt(step["description"], output_dir, artifacts, context, previous_attempts, research_context, lessons)
 
-    model = llm.bind_tools(worker_tools)
+    task = build_worker_prompt(
+        step["description"],
+        output_dir,
+        artifacts,
+        context,
+        previous_attempts,
+        plan.get("research_context"),
+    )
     messages = [SystemMessage(content=prompt), HumanMessage(content=task)]
-    output_parts, tool_calls_made, new_artifacts = [], [], list(artifacts)
-    solution, error = "", None
+    model = llm.bind_tools(worker_tools)
+
+    output_parts: list[str] = []
+    tool_calls_made: list[str] = []
+    new_artifacts = list(artifacts)
+    solution = ""
+    error = None
     final_answer_produced = False
     structured_output = None
-    structured_output_valid = None
+    issue_logs = []
 
-    for iteration in range(MAX_ITERATIONS):
+    for _ in range(MAX_ITERATIONS):
         if logger:
             logger.thinking()
         try:
-            if diagnostics:
-                response = await diagnostics.record_llm_call(
-                    agent_name,
-                    "worker_iteration",
-                    llm,
-                    messages,
-                    "not_applicable",
-                    lambda: model.ainvoke(messages),
-                )
-            else:
-                response = await model.ainvoke(messages)
-        except Exception as e:
-            error = f"Model error: {e}"
+            response = await model.ainvoke(messages)
+        except Exception as exc:
+            error = f"Model error: {exc}"
             break
 
         messages.append(response)
@@ -100,84 +90,48 @@ async def execute(
             solution = response.content or ""
             break
 
-        for tc in response.tool_calls:
-            name, args, tc_id = tc["name"], tc["args"], tc["id"]
+        for tool_call in response.tool_calls:
+            name = tool_call["name"]
+            args = tool_call["args"]
+            tool_call_id = tool_call["id"]
 
-            if name == "final_answer":
-                final_answer_produced = True
-                solution = f"{args.get('status', 'success')}: {args.get('summary', '')}"
-                messages.append(ToolMessage(content=solution, tool_call_id=tc_id))
-                break
-            if name == "structured_final_answer":
-                final_answer_produced = True
-                tool_fn = next((t for t in worker_tools if t.name == name), None)
-                raw_result = tool_fn.invoke(args) if tool_fn else {"error": "structured_final_answer tool not found"}
-                structured_output_valid = isinstance(raw_result, dict) and not raw_result.get("error")
-                if structured_output_valid:
-                    structured_output = raw_result
-                    solution = f"{raw_result['status']}: {raw_result['summary']}"
-                    new_artifacts.extend(raw_result.get("artifacts", []))
+            if name in {"final_answer", "structured_final_answer"}:
+                valid, completion, structured_output = _handle_completion_tool(name, args, worker_tools)
+                messages.append(ToolMessage(content=completion, tool_call_id=tool_call_id))
+                tool_calls_made.append(name)
+                artifact_paths = structured_output.get("artifacts", []) if structured_output else []
+                if recorder:
+                    recorder.tool_call(step, name, args, completion, artifact_paths, _tool_source(tool_sources, name))
+                if valid:
+                    final_answer_produced = True
+                    solution = completion
+                    if structured_output:
+                        new_artifacts.extend(structured_output.get("artifacts", []))
                 else:
-                    solution = ""
-                    result_error = raw_result.get("error") if isinstance(raw_result, dict) else str(raw_result)
-                    messages.append(ToolMessage(content=result_error, tool_call_id=tc_id))
-                    if diagnostics:
-                        diagnostics.failure("llm_instruction_failure", agent_name, step_id, f"Invalid structured_final_answer: {result_error}", False, "invalid_worker_output")
-                    break
-                result_str = json.dumps(raw_result)
-                messages.append(ToolMessage(content=result_str, tool_call_id=tc_id))
-                if diagnostics:
-                    diagnostics.record_worker_output(agent_name, step_id, raw_result, structured_output_valid)
+                    output_parts.append(f"[{name}]: {completion}")
                 break
 
-            tool_fn = next((t for t in worker_tools if t.name == name), None)
-            tool_started = time.perf_counter()
-            tool_status = "success"
-            error_type = None
-            error_message = None
+            tool_fn = _find_tool(worker_tools, name)
             if not tool_fn:
-                result_str = f"Tool '{name}' not found"
-                tool_status = "failed"
-                error_type = "llm_tool_hallucination"
-                error_message = result_str
+                result_str = f"Error: Tool '{name}' not found"
             else:
                 if logger:
                     logger.tool_start(name, args)
-                try:
-                    result = await tool_fn.ainvoke(args)
-                except NotImplementedError:
-                    result = tool_fn.invoke(args)
-                except Exception as e:
-                    result = f"ERROR: {e}\n\nAnalyze this error and retry with corrected parameters."
-                    tool_status = "failed"
-                    error_message = str(e)
-                    error_type = _classify_tool_error(e)
-                result_str = normalize_tool_result(result)
+                result_str = await _call_tool(tool_fn, args)
 
+            artifact_paths = extract_artifacts(result_str, artifact_extensions)
             tool_calls_made.append(name)
             output_parts.append(f"[{name}]: {result_str[:500]}")
-            detected_artifacts = extract_artifacts(result_str, artifact_extensions)
-            new_artifacts.extend(detected_artifacts)
-            messages.append(ToolMessage(content=result_str, tool_call_id=tc_id))
-            if diagnostics:
-                diagnostics.record_tool_call(
-                    agent_name,
-                    step_id,
-                    name,
-                    _tool_source(name, tools, diagnostics),
-                    time.perf_counter() - tool_started,
-                    tool_status,
-                    error_type,
-                    error_message,
-                    detected_artifacts,
-                )
-                if tool_status == "failed" and error_type:
-                    impact = "unknown_tool_requested" if error_type == "llm_tool_hallucination" else "tool_call_failed"
-                    diagnostics.failure(error_type, agent_name, step_id, error_message or result_str, False, impact)
+            new_artifacts.extend(artifact_paths)
+            if result_str.startswith("ISSUE_LOGGED:"):
+                issue_logs.append(result_str)
+            messages.append(ToolMessage(content=result_str, tool_call_id=tool_call_id))
+            if recorder:
+                recorder.tool_call(step, name, args, result_str, artifact_paths, _tool_source(tool_sources, name))
 
             if logger:
                 logger.tool_call(name, args, result_str)
-            if notebook and name not in ("final_answer", "log_issue"):
+            if notebook and name not in {"final_answer", "log_issue"}:
                 notebook.tool_call(name, args, result_str, step["worker_type"])
 
         if solution:
@@ -185,46 +139,100 @@ async def execute(
 
     output = "\n\n".join(output_parts)
     if solution:
-        output += f"\n\n## Answer\n{solution}"
+        output = f"{output}\n\n## Answer\n{solution}" if output else f"## Answer\n{solution}"
 
-    has_success = solution.startswith("success:")
-    has_failure = solution.startswith("failed:")
-    attempt = {"output": output, "error": error, "tool_calls": tool_calls_made}
-    attempts = previous_attempts + [attempt]
+    attempts = previous_attempts + [{"output": output, "error": error, "tool_calls": tool_calls_made}]
+    status, error, solution = _status_from_solution(solution, error, attempts, structured_worker_output)
+    new_steps = _update_steps(
+        plan,
+        step_id,
+        status,
+        output,
+        solution,
+        new_artifacts,
+        error,
+        attempts,
+        final_answer_produced,
+        structured_output,
+    )
 
-    if has_failure:
-        status, error, solution = "failed", solution.strip(), ""
-    elif has_success:
-        status, error = "completed", None
-    elif solution:
-        error = "Call final_answer('success', summary) or final_answer('failed', reason) to complete."
-        if structured_worker_output:
-            error = "Call structured_final_answer(status, summary, artifacts, observations, limitations) to complete."
-        status = "ready" if len(attempts) < MAX_RETRIES else "failed"
-    else:
-        status, error = "failed", error or "No solution produced"
-
-    if not final_answer_produced and diagnostics:
-        diagnostics.failure("llm_instruction_failure", agent_name, step_id, "Worker did not call the required final answer tool.", status != "failed", "missing_final_answer")
-    if structured_worker_output and final_answer_produced and structured_output_valid is not True and diagnostics:
-        diagnostics.record_worker_output(agent_name, step_id, structured_output or {"status": None, "summary": None}, False)
-    if status == "completed" and diagnostics:
-        diagnostics.mark_step_recovered(agent_name, step_id)
-
-    new_steps = _update_steps(plan, step_id, status, output, solution, new_artifacts, error, attempts, final_answer_produced, structured_output)
-    return {
+    update = {
         "plan": {**plan, "steps": new_steps},
         "current_step_id": None,
-        "messages": [AIMessage(content=f"{'Completed' if status == 'completed' else 'Failed' if status == 'failed' else 'Retrying'}: {step['name']}")],
+        "messages": [AIMessage(content=f"{status.title()}: {step['name']}")],
     }
+    if issue_logs:
+        update["tool_issues"] = issue_logs
+    return update
 
 
-def _update_steps(plan, step_id, status, output, solution, artifacts, error, attempts, final_answer_produced=False, structured_output=None):
+def _find_tool(tools: list, name: str):
+    return next((tool for tool in tools if tool.name == name), None)
+
+
+def _tool_source(tool_sources: dict | None, name: str) -> dict | None:
+    return tool_sources.get(name) if tool_sources else None
+
+
+async def _call_tool(tool_fn, args: dict) -> str:
+    try:
+        result = await tool_fn.ainvoke(args)
+    except NotImplementedError:
+        result = tool_fn.invoke(args)
+    except Exception as exc:
+        result = f"Error: {type(exc).__name__}: {exc}\n\nAnalyze this error and retry with corrected parameters."
+    return normalize_tool_result(result)
+
+
+def _handle_completion_tool(name: str, args: dict, tools: list) -> tuple[bool, str, dict | None]:
+    tool_fn = _find_tool(tools, name)
+    if not tool_fn:
+        return False, f"Error: {name} tool not found", None
+
+    raw_result = tool_fn.invoke(args)
+    if name == "final_answer":
+        result = normalize_tool_result(raw_result)
+        return (not result.startswith("Error:"), result, None)
+
+    if isinstance(raw_result, dict) and not raw_result.get("error"):
+        result = f"{raw_result['status']}: {raw_result['summary']}"
+        return True, result, raw_result
+
+    if isinstance(raw_result, dict):
+        return False, raw_result.get("error", json.dumps(raw_result)), None
+    return False, normalize_tool_result(raw_result), None
+
+
+def _status_from_solution(solution: str, error: str | None, attempts: list[dict], structured_worker_output: bool):
+    if solution.startswith("failed:"):
+        return "failed", solution.strip(), ""
+    if solution.startswith("success:"):
+        return "completed", None, solution
+    if solution:
+        completion_tool = "structured_final_answer" if structured_worker_output else "final_answer"
+        error = f"Call {completion_tool} to complete the task."
+        status = "ready" if len(attempts) < MAX_RETRIES else "failed"
+        return status, error, solution
+    return "failed", error or "No solution produced", solution
+
+
+def _update_steps(
+    plan,
+    step_id,
+    status,
+    output,
+    solution,
+    artifacts,
+    error,
+    attempts,
+    final_answer_produced=False,
+    structured_output=None,
+):
     new_steps = []
-    for s in plan["steps"]:
-        if s["id"] == step_id:
+    for step in plan["steps"]:
+        if step["id"] == step_id:
             new_steps.append({
-                **s,
+                **step,
                 "status": status,
                 "output": output,
                 "solution": solution,
@@ -235,44 +243,27 @@ def _update_steps(plan, step_id, status, output, solution, artifacts, error, att
                 "structured_output": structured_output,
             })
         else:
-            new_steps.append(s.copy())
+            new_steps.append(step.copy())
 
     if status == "completed":
-        completed = {s["id"] for s in new_steps if s["status"] == "completed"}
-        for i, s in enumerate(new_steps):
-            if s["status"] == "pending" and all(dep in completed for dep in s["depends_on"]):
-                new_steps[i] = {**s, "status": "ready"}
+        completed = {step["id"] for step in new_steps if step["status"] == "completed"}
+        for index, step in enumerate(new_steps):
+            if step["status"] == "pending" and all(dep in completed for dep in step["depends_on"]):
+                new_steps[index] = {**step, "status": "ready"}
 
     return new_steps
 
 
-def _build_worker_tools(base_tools: List, worker_type: str, issue_tracking: bool, structured_output: bool, run_local_tools: bool) -> List:
+def _build_worker_tools(
+    base_tools: list,
+    worker_type: str,
+    output_dir: str,
+    issue_tracking: bool,
+    structured_output: bool,
+) -> list:
     tools = list(base_tools)
     tools.append(structured_final_answer if structured_output else final_answer)
     if issue_tracking:
         tools.append(log_issue)
-    if worker_type in WORKER_TOOLS:
-        tools.extend(WORKER_TOOLS[worker_type]())
-    if run_local_tools and worker_type == "compute":
-        tools.extend(get_run_local_tools())
+    tools.extend(get_worker_tools(worker_type, output_dir, tools))
     return tools
-
-
-def _classify_tool_error(error: Exception) -> str:
-    name = type(error).__name__.lower()
-    text = str(error).lower()
-    if any(term in name or term in text for term in ("validation", "argument", "schema", "pydantic", "missing required")):
-        return "tool_argument_failure"
-    if any(term in text for term in ("connection", "timeout", "http", "api", "server")):
-        return "remote_api_failure"
-    return "tool_runtime_failure"
-
-
-def _tool_source(name: str, mcp_tools: List, diagnostics: Any = None) -> str:
-    if diagnostics:
-        for tool in diagnostics.data.get("configuration", {}).get("available_tools", []):
-            if tool.get("name") == name:
-                return tool.get("source") or "mcp"
-    if any(getattr(t, "name", None) == name for t in mcp_tools):
-        return "mcp"
-    return "built_in"

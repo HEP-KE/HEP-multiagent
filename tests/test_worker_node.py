@@ -1,5 +1,6 @@
 import asyncio
 
+import pytest
 from langchain_core.messages import AIMessage
 
 from hep_multiagent.nodes.worker import execute
@@ -35,6 +36,26 @@ class FinalAnswerLLM:
         }])
 
 
+class IssueThenFinalLLM(FinalAnswerLLM):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            return AIMessage(content="", tool_calls=[{
+                "name": "log_issue",
+                "args": {
+                    "component": "compute",
+                    "problem": "needed small glue code",
+                    "suggestion": "add a dedicated conversion tool",
+                },
+                "id": "call-1",
+            }])
+        return await super().ainvoke(messages)
+
+
 def one_step_state():
     return {
         "current_step_id": "s1",
@@ -58,7 +79,7 @@ def one_step_state():
     }
 
 
-def test_worker_completes_with_final_answer():
+def test_worker_can_use_plain_final_answer_when_structured_output_is_disabled():
     llm = FinalAnswerLLM()
     result = asyncio.run(execute(
         one_step_state(),
@@ -66,8 +87,8 @@ def test_worker_completes_with_final_answer():
         tools=[],
         workers={"compute": "compute prompt"},
         artifact_extensions=[".csv"],
-        default_output_dir="/tmp",
         issue_tracking=False,
+        structured_worker_output=False,
     ))
 
     step = result["plan"]["steps"][0]
@@ -76,7 +97,22 @@ def test_worker_completes_with_final_answer():
     assert step["solution"] == "success: done"
 
 
-def test_structured_worker_output_is_recorded():
+def test_worker_requires_current_step():
+    state = one_step_state()
+    state["current_step_id"] = "missing"
+
+    with pytest.raises(RuntimeError, match="Current step not found"):
+        asyncio.run(execute(
+            state,
+            FinalAnswerLLM(),
+            tools=[],
+            workers={"compute": "compute prompt"},
+            artifact_extensions=[".csv"],
+            issue_tracking=False,
+        ))
+
+
+def test_worker_uses_structured_completion_by_default():
     llm = FinalAnswerLLM()
     result = asyncio.run(execute(
         one_step_state(),
@@ -84,9 +120,7 @@ def test_structured_worker_output_is_recorded():
         tools=[],
         workers={"compute": "compute prompt"},
         artifact_extensions=[".csv"],
-        default_output_dir="/tmp",
         issue_tracking=False,
-        structured_worker_output=True,
     ))
 
     step = result["plan"]["steps"][0]
@@ -95,17 +129,15 @@ def test_structured_worker_output_is_recorded():
     assert step["structured_output"]["observations"] == ["value=1"]
 
 
-def test_role_prompts_can_be_disabled():
-    llm = FinalAnswerLLM()
-    asyncio.run(execute(
+def test_worker_returns_logged_issues_in_state():
+    result = asyncio.run(execute(
         one_step_state(),
-        llm,
+        IssueThenFinalLLM(),
         tools=[],
-        workers={"compute": "verbose compute prompt"},
+        workers={"compute": "compute prompt"},
         artifact_extensions=[".csv"],
-        default_output_dir="/tmp",
-        issue_tracking=False,
-        role_prompts=False,
     ))
 
-    assert llm.messages[0].content == "You are the compute worker."
+    assert result["tool_issues"] == [
+        "ISSUE_LOGGED: [compute] needed small glue code -> add a dedicated conversion tool"
+    ]

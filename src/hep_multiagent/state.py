@@ -1,15 +1,17 @@
-from typing import TypedDict, Optional, List, Annotated, Literal
 from operator import add
+from typing import Annotated, Literal, TypedDict
+
+from langgraph.graph.message import add_messages
 
 
 StepStatus = Literal["pending", "ready", "running", "completed", "failed", "blocked"]
-NextAction = Literal["plan", "execute", "synthesize", "await_approval", "end"]
+NextAction = Literal["plan", "execute", "synthesize", "end"]
 
 
 class StepAttempt(TypedDict):
-    output: Optional[str]
-    error: Optional[str]
-    tool_calls: List[str]
+    output: str | None
+    error: str | None
+    tool_calls: list[str]
 
 
 class PlanStep(TypedDict):
@@ -17,35 +19,34 @@ class PlanStep(TypedDict):
     name: str
     worker_type: str
     description: str
-    depends_on: List[str]
+    depends_on: list[str]
     status: StepStatus
-    output: Optional[str]
-    solution: Optional[str]
-    artifacts: List[str]
-    error: Optional[str]
-    attempts: List[StepAttempt]
+    output: str | None
+    solution: str | None
+    artifacts: list[str]
+    error: str | None
+    attempts: list[StepAttempt]
     final_answer_produced: bool
-    structured_output: Optional[dict]
+    structured_output: dict | None
 
 
 class Plan(TypedDict, total=False):
     id: str
     goal: str
-    status: Literal["draft", "active", "completed", "failed"]
-    steps: List[PlanStep]
-    research_context: Optional[str]
+    status: Literal["active", "completed", "failed"]
+    steps: list[PlanStep]
+    research_context: str | None
 
 
 class AgentState(TypedDict, total=False):
-    messages: Annotated[List, add]
-    plan: Optional[Plan]
-    current_step_id: Optional[str]
+    messages: Annotated[list, add_messages]
+    plan: Plan | None
+    current_step_id: str | None
     next_action: NextAction
-    final_report: Optional[str]
-    user_approved: Optional[bool]
-    planning_feedback: Optional[str]
+    final_report: str | None
+    error: str | None
     output_dir: str
-    tool_issues: Annotated[List[str], add]
+    tool_issues: Annotated[list[str], add]
 
 
 def get_dependency_context(plan: Plan, step_id: str) -> tuple:
@@ -75,7 +76,7 @@ def get_dependency_context(plan: Plan, step_id: str) -> tuple:
     return "\n".join(parts).strip(), artifacts
 
 
-def get_ready_steps(plan: Plan) -> List[PlanStep]:
+def get_ready_steps(plan: Plan) -> list[PlanStep]:
     if not plan or not plan.get("steps"):
         return []
 

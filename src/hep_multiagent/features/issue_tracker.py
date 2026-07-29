@@ -47,5 +47,5 @@ def format_issues_for_report(issues: list[str]) -> str:
         return ""
     lines = []
     for issue in parsed:
-        lines.append(f"- {issue['component']}: {issue['problem']} → {issue['suggestion']}")
+        lines.append(f"- {issue['component']}: {issue['problem']} -> {issue['suggestion']}")
     return "\n".join(lines)

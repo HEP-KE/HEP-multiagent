@@ -8,9 +8,7 @@ from .citation_validation import parse_quotes
 
 @dataclass
 class ReportSection:
-    title: str
     content: str
-    subsections: list["ReportSection"] = field(default_factory=list)
 
 
 @dataclass
@@ -18,7 +16,6 @@ class ReportData:
     title: str
     query: str
     sections: list[ReportSection]
-    references: list = field(default_factory=list)
     figures: list[str] = field(default_factory=list)
 
 
@@ -37,7 +34,6 @@ class LaTeXReport:
 
         pdf_path = tex_path.replace(".tex", ".pdf")
         if os.path.exists(pdf_path):
-            os.remove(tex_path)
             self._cleanup_aux_files(output_dir)
 
         return pdf_path

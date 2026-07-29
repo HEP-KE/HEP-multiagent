@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 from ..worker import run_consultation
 
@@ -15,5 +15,5 @@ Provide a clear summary of:
 - Key columns for the requested analysis"""
 
 
-async def consult(llm: Any, tools: List, question: str, max_iterations: int = 10) -> str:
+async def consult(llm: Any, tools: list, question: str, max_iterations: int = 10) -> str:
     return await run_consultation(llm, tools, PROMPT, question, max_iterations)

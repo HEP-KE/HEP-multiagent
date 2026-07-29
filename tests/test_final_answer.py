@@ -6,17 +6,6 @@ def test_success():
     assert result == "success: Task completed"
 
 
-def test_failed():
-    result = final_answer.invoke({"status": "failed", "summary": "Could not find data"})
-    assert result == "failed: Could not find data"
-
-
-def test_empty_summary_returns_error():
-    result = final_answer.invoke({"status": "success", "summary": ""})
-    assert "Error:" in result
-    assert "Retry" in result
-
-
 def test_invalid_status_returns_error():
     result = final_answer.invoke({"status": "unknown", "summary": "test"})
     assert "Error:" in result
@@ -34,6 +23,22 @@ def test_structured_final_answer_success():
     assert result["status"] == "success"
     assert result["summary"] == "Task completed"
     assert result["artifacts"] == ["outputs/result.csv"]
+    assert result["claims"] == []
+    assert result["evidence"] == []
+
+
+def test_structured_final_answer_accepts_claims_and_evidence():
+    result = structured_final_answer.invoke({
+        "status": "success",
+        "summary": "Task completed",
+        "artifacts": ["outputs/result.csv"],
+        "observations": ["Rows counted: 10"],
+        "limitations": [],
+        "claims": ["The table has 10 rows."],
+        "evidence": ["outputs/result.csv"],
+    })
+    assert result["claims"] == ["The table has 10 rows."]
+    assert result["evidence"] == ["outputs/result.csv"]
 
 
 def test_structured_final_answer_validates_lists():

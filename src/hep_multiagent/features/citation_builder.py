@@ -60,20 +60,6 @@ def cite(arxiv_id: str, note: str, bib_path: str) -> dict:
 
 
 class BibTeXManager:
-    def __init__(self):
-        self._bib_exists = False
-
-    def load(self, output_dir: str) -> bool:
-        bib_path = os.path.join(output_dir, "references.bib")
-        if not os.path.exists(bib_path):
-            return False
-        with open(bib_path) as f:
-            content = f.read().strip()
-        if not content:
-            return False
-        self._bib_exists = True
-        return True
-
     def export(self, output_dir: str) -> str:
         bib_path = os.path.join(output_dir, "references.bib")
         return bib_path

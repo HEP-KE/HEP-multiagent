@@ -32,8 +32,8 @@ Call log_issue(component, problem, suggestion) when you:
 - Encounter a tool failure or unexpected result
 - Notice an opportunity for a new visualization tool
 
-REQUIRED: final_answer must include ALL outputs produced (file paths, plot names) so downstream workers can use them."""
+REQUIRED: the completion tool must include ALL outputs produced (file paths, plot names) so downstream workers can use them."""
 
 
-def get_viz_tools():
+def get_viz_tools(output_dir=None, available_tools=None):
     return [list_output_files]

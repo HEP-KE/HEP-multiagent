@@ -38,22 +38,18 @@ CRITICAL: Cite papers using their arXiv ID in brackets exactly as shown in the C
 """
 
 
-async def synthesize(state: AgentState, llm: Any, report_writer, references, logger=None, diagnostics=None) -> dict:
+async def synthesize(state: AgentState, llm: Any, report_writer, references, logger=None) -> dict:
     plan = state.get("plan")
     if not plan:
-        return {"final_report": "No plan created.", "next_action": "end"}
+        error = state.get("error")
+        message = f"Run failed before a plan was created: {error}" if error else "No plan created."
+        return {"final_report": message, "next_action": "end", "messages": [AIMessage(content=message)]}
 
-    query = ""
-    for msg in state.get("messages", []):
-        if isinstance(msg, HumanMessage):
-            query = msg.content
-            break
+    query = next(msg.content for msg in state["messages"] if isinstance(msg, HumanMessage))
 
-    output_dir = state.get("output_dir", ".")
+    output_dir = state["output_dir"]
     has_report = report_writer is not None
     has_references = references is not None
-    if has_references:
-        references.load(output_dir)
 
     cite_keys = _read_bib_keys(output_dir) if has_references else "No papers available to cite."
     response_format = "Write plain text or Markdown. Do not use LaTeX."
@@ -95,19 +91,9 @@ REQUIRED SECTION - always include this."""
     if logger:
         logger.log("Synthesis", "Calling LLM for report generation...")
 
-    try:
-        messages = [HumanMessage(content=prompt)]
-        if diagnostics:
-            response = await diagnostics.record_llm_call("synthesis", "final_report", llm, messages, "not_applicable", lambda: llm.ainvoke(messages))
-        else:
-            response = await llm.ainvoke(messages)
-        content = response.content
-    except Exception as e:
-        if logger:
-            logger.log("Synthesis", f"LLM error: {e}")
-        if diagnostics:
-            diagnostics.failure("report_generation_failure", "synthesis", None, f"Final report generation failed: {e}", False, "final_report_failed")
-        raise
+    messages = [HumanMessage(content=prompt)]
+    response = await llm.ainvoke(messages)
+    content = response.content
 
     if has_report:
         if logger:
@@ -124,7 +110,7 @@ State the answer immediately. If the system could not answer, state that directl
 
 \section{{Execution Log}}
 For each step document which worker/node executed it, which tools or MCP servers were invoked.
-Include the LLM's observations, adjustments, workarounds, retries at each step.
+Include the LLM's observations and retries at each step.
 Note failures, errors, and gaps \textbf{{inline where they occurred}} - be specific, not verbose.
 Write: "The data worker queried...", "The compute worker encountered error X when..."
 Do NOT invent explanations for failures.
@@ -147,21 +133,11 @@ REQUIRED SECTION - always include this.""",
             worker_issues=worker_issues,
             value_format=r"\textbf{{\textcolor{{blue}}{{value with units}}}}",
         )
-        latex_content = content
-        try:
-            latex_messages = [HumanMessage(content=latex_prompt)]
-            if diagnostics:
-                latex_response = await diagnostics.record_llm_call("synthesis", "latex_report", llm, latex_messages, "not_applicable", lambda: llm.ainvoke(latex_messages))
-            else:
-                latex_response = await llm.ainvoke(latex_messages)
-            latex_content = latex_response.content
-        except Exception as e:
-            if logger:
-                logger.log("Synthesis", f"LaTeX report generation failed: {e}, using plain response")
-            if diagnostics:
-                diagnostics.failure("report_generation_failure", "synthesis", None, f"LaTeX report generation failed: {e}", False, "latex_report_failed")
+        latex_messages = [HumanMessage(content=latex_prompt)]
+        latex_response = await llm.ainvoke(latex_messages)
+        latex_content = latex_response.content
 
-        sections = [ReportSection(title="Report", content=latex_content)]
+        sections = [ReportSection(content=latex_content)]
         figures = _collect_figures(plan)
         data = ReportData(
             title=plan["goal"],
@@ -209,24 +185,12 @@ def _read_bib_keys(output_dir: str) -> str:
     return "USE ONLY THESE CITATIONS (do not invent others):\n" + "\n".join(entries)
 
 
-def get_step_status(step: dict) -> tuple[str, str]:
-    """Return (icon, label) for a step's status."""
-    status = step.get("status", "pending")
-    if status == "completed":
-        return ("✓", "COMPLETED")
-    elif status == "failed":
-        return ("✗", "FAILED")
-    return ("⏭", "SKIPPED")
-
-
 def count_step_statuses(steps: list[dict]) -> dict[str, int]:
-    """Count steps by status category."""
     counts = {"completed": 0, "failed": 0, "skipped": 0}
     for step in steps:
-        icon, _ = get_step_status(step)
-        if icon == "✓":
+        if step["status"] == "completed":
             counts["completed"] += 1
-        elif icon == "✗":
+        elif step["status"] == "failed":
             counts["failed"] += 1
         else:
             counts["skipped"] += 1
@@ -234,15 +198,15 @@ def count_step_statuses(steps: list[dict]) -> dict[str, int]:
 
 
 def _build_execution_summary(plan: Plan) -> str:
-    steps = plan.get("steps", [])
+    steps = plan["steps"]
     counts = count_step_statuses(steps)
     lines = [
         f"Goal: {plan['goal']}",
         f"\n## Status: {counts['completed']} completed, {counts['failed']} failed, {counts['skipped']} skipped\n",
     ]
     for step in steps:
-        icon, label = get_step_status(step)
-        lines.append(f"### {icon} {label}: {step['name']} [{step['worker_type']}]")
+        label = "COMPLETED" if step["status"] == "completed" else "FAILED" if step["status"] == "failed" else "SKIPPED"
+        lines.append(f"### {label}: {step['name']} [{step['worker_type']}]")
         lines.append(f"Task: {step['description']}")
         if step.get("output"):
             lines.append(f"Output: {step['output']}")
@@ -252,13 +216,10 @@ def _build_execution_summary(plan: Plan) -> str:
             lines.append(f"ERROR: {step['error']}")
         if step.get("artifacts"):
             lines.append(f"Files: {', '.join(step['artifacts'])}")
-        for attempt in step.get("attempts", []):
-            if attempt.get("thoughts"):
-                lines.append(f"Agent Reasoning: {attempt['thoughts']}")
         lines.append("")
     return "\n".join(lines)
 
 
 def _collect_figures(plan: Plan) -> list[str]:
     exts = {".png", ".pdf", ".jpg", ".jpeg"}
-    return [a for s in plan.get("steps", []) for a in s.get("artifacts", []) if os.path.splitext(a)[1].lower() in exts]
+    return [a for s in plan["steps"] for a in s["artifacts"] if os.path.splitext(a)[1].lower() in exts]

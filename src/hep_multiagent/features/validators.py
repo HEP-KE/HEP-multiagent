@@ -43,13 +43,6 @@ def json_list(value: str, name: str = "value") -> None:
         raise ValueError(f"{name} must be a JSON list, got {type(data).__name__}")
 
 
-def json_serializable(data, name: str = "data") -> None:
-    try:
-        json.dumps(data)
-    except (TypeError, ValueError) as e:
-        raise ValueError(f"{name} is not JSON-serializable: {e}")
-
-
 def positive_int(value: int, name: str) -> None:
     if value <= 0:
         raise ValueError(f"{name} must be positive, got: {value}")
@@ -63,17 +56,6 @@ def non_negative_int(value: int, name: str) -> None:
 def int_range(value: int, min_val: int, max_val: int, name: str) -> None:
     if not min_val <= value <= max_val:
         raise ValueError(f"{name} must be between {min_val} and {max_val}, got: {value}")
-
-
-def file_written(filepath: str, min_size: int = 1) -> None:
-    size = os.path.getsize(filepath)
-    if size < min_size:
-        raise ValueError(f"File is empty or too small: {filepath}")
-
-
-def arrays_same_length(x, y) -> None:
-    if len(x) != len(y):
-        raise ValueError(f"Array length mismatch: x has {len(x)}, y has {len(y)}")
 
 
 def text_not_empty(text: str, min_chars: int = 100) -> None:

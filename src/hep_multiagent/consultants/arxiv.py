@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 from ..worker import run_consultation
 
@@ -17,5 +17,5 @@ Provide a clear, concise summary focused on:
 Include arXiv IDs so papers can be cited later if needed, but your primary goal is extracting ACTIONABLE CRITERIA for planning."""
 
 
-async def consult(llm: Any, tools: List, question: str, max_iterations: int = 10) -> str:
+async def consult(llm: Any, tools: list, question: str, max_iterations: int = 10) -> str:
     return await run_consultation(llm, tools, PROMPT, question, max_iterations)

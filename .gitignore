@@ -30,3 +30,8 @@ execution_log.md
 
 # Notebook metadata
 .ipynb_checkpoints/
+# Demo KB runtime
+demo_kb_runtime/
+
+# Demo science MCP runtime
+demo_science_mcp_runtime/

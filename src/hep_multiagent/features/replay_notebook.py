@@ -1,7 +1,15 @@
+import ast
 import json
 from pathlib import Path
 
 from hep_multiagent.workers import __all__ as WORKER_EXPORTS
+
+_OUTPUT_DIR_TOOLS = {"write_csv_file", "list_output_files"}
+_PYTHON_IMPORTS = {
+    "np": "numpy as np",
+    "pd": "pandas as pd",
+    "plt": "matplotlib.pyplot as plt",
+}
 
 
 class ExecutionNotebook:
@@ -17,7 +25,7 @@ class ExecutionNotebook:
         self._logger = logger
         self._path = Path(output_dir) / "execution.ipynb"
         self._output_dir = str(Path(output_dir).resolve())
-        self._imports = {"numpy as np", "pandas as pd", "matplotlib.pyplot as plt", "os"}
+        self._imports = {"os"}
         self._tool_sources = tool_sources or {}
         self._cells = []
         self._save()
@@ -35,6 +43,7 @@ class ExecutionNotebook:
             code = args.get("code", "")
             if self._output_dir:
                 code = code.replace(self._output_dir, '" + REPLAY_DIR + "')
+            self._add_python_imports(code)
             source = code
         elif name in self._tool_sources:
             args_str = ", ".join(self._format_arg(k, v) for k, v in args.items())
@@ -42,8 +51,10 @@ class ExecutionNotebook:
             source = f"# MCP tool call on {url}\n# {name}({args_str})"
         elif name in WORKER_EXPORTS:
             self._imports.add(f"hep_multiagent.workers import {name}")
-            args_str = ", ".join(self._format_arg(k, v) for k, v in args.items())
-            source = f"{name}({args_str})"
+            parts = [self._format_arg(k, v) for k, v in args.items()]
+            if name in _OUTPUT_DIR_TOOLS:
+                parts.append("output_dir=REPLAY_DIR")
+            source = f"{name}({', '.join(parts)})"
         else:
             if self._logger:
                 self._logger.log("Hallucination", f"Unknown tool '{name}' from worker '{worker_type}'")
@@ -58,6 +69,15 @@ class ExecutionNotebook:
         })
         self._save()
 
+    def _add_python_imports(self, code: str) -> None:
+        try:
+            names = {node.id for node in ast.walk(ast.parse(code)) if isinstance(node, ast.Name)}
+        except SyntaxError:
+            return
+        for name, import_stmt in _PYTHON_IMPORTS.items():
+            if name in names:
+                self._imports.add(import_stmt)
+
     def _save(self) -> None:
         cells = []
         if self._imports:
@@ -65,8 +85,7 @@ class ExecutionNotebook:
                                for i in sorted(self._imports))
             cells.append(self._cell(imports))
         if self._output_dir:
-            self._imports.add("hep_multiagent.workers.compute import set_output_dir")
-            setup = f'OUTPUT_DIR = {self._output_dir!r}\nREPLAY_DIR = OUTPUT_DIR + "_replay"\nos.makedirs(REPLAY_DIR, exist_ok=True)\nset_output_dir(REPLAY_DIR)'
+            setup = f'OUTPUT_DIR = {self._output_dir!r}\nREPLAY_DIR = OUTPUT_DIR + "_replay"\nos.makedirs(REPLAY_DIR, exist_ok=True)'
             cells.append(self._cell(setup))
         cells.extend(self._cells)
         nb = {
@@ -85,6 +104,3 @@ class ExecutionNotebook:
             "source": source.splitlines(keepends=True) if "\n" in source else [source],
             "outputs": []
         }
-
-    def close(self) -> None:
-        pass

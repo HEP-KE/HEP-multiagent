@@ -1,5 +1,3 @@
-from typing import Optional
-
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 
@@ -10,7 +8,7 @@ class SQLiteCheckpoint:
     def checkpointer(self):
         return AsyncSqliteSaver.from_conn_string(self._db_path)
 
-    async def get_state(self, saver, thread_id: str) -> Optional[dict]:
+    async def get_state(self, saver, thread_id: str) -> dict | None:
         config = {"configurable": {"thread_id": thread_id}}
         checkpoint = await saver.aget(config)
         return checkpoint.get("channel_values") if checkpoint else None

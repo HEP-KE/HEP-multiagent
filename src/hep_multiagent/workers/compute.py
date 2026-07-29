@@ -1,25 +1,15 @@
-import os
-import io
 import contextlib
+import io
+import os
+import re
+
+import numpy as np
+import pandas as pd
 
 from langchain_core.tools import tool
 
 from ..features import validators as validate
 from .research import cite, read_arxiv_chunk as read_text_file
-
-_code_approval = None
-_output_dir = None
-
-
-def set_code_approval(approval):
-    global _code_approval
-    _code_approval = approval
-
-
-def set_output_dir(output_dir):
-    global _output_dir
-    _output_dir = output_dir
-
 
 PROMPT = """You are a compute worker. Your job: load data, filter, transform, compute statistics.
 
@@ -58,7 +48,7 @@ Call log_issue(component, problem, suggestion) when you:
 - Write code because no tool exists for the operation
 - Notice an opportunity for a new tool that would help
 
-REQUIRED: final_answer must include ALL outputs produced (file paths, dataset names, computed values) so downstream workers can use them."""
+REQUIRED: the completion tool must include ALL outputs produced (file paths, dataset names, computed values) so downstream workers can use them."""
 
 
 SANDBOX_ALLOWED_IMPORTS = {
@@ -67,9 +57,40 @@ SANDBOX_ALLOWED_IMPORTS = {
     'datetime', 'time', 're', 'csv', 'h5py', 'astropy', 'healpy',
 }
 
+# Tools whose own name should not appear in the "prefer these tools" list that
+# execute_python advertises (they don't do analysis work).
+_SUMMARY_SKIP = {"execute_python", "final_answer", "structured_final_answer", "log_issue"}
+
+_EXECUTE_PYTHON_DOC = """Run a SMALL Python glue snippet to bridge ONE gap that no existing tool covers.
+
+This is NOT for solving the task or writing the workflow. Writing code is a last, small resort.
+
+Rules:
+- FIRST use your available tools below. They are written and tested - do not reimplement their work in Python.
+- Use this ONLY for a small correction/adaptation (reshape a value, convert a format, compute one
+  derived number) that no tool provides.
+- Write the minimum code for that single fix, then STOP. Return to calling tools for every remaining step.
+- Do NOT continue the rest of the multi-step workflow inside this tool. After it runs, resume normal tool calls.
+- Pre-imported: np (numpy), pd (pandas), plt (matplotlib). OUTPUT_DIR holds the run's output directory.
+- Allowed imports: {imports}
+
+Available tools to prefer instead of writing code:
+{tool_summary}
+
+Args:
+    code: A short Python snippet for the single missing step. Use print() to see results.
+
+Returns:
+    Printed output (or error). Then continue with tool calls - do not keep coding.
+"""
+
+_GLUE_REMINDER = (
+    "\n\n[reminder] Glue step complete. Return to calling your available tools for the rest of "
+    "the workflow - do not keep writing the workflow inside execute_python."
+)
+
 
 def _check_imports(code: str) -> str | None:
-    import re
     patterns = [
         r'^\s*import\s+([\w,\s]+)',
         r'^\s*from\s+(\w+)',
@@ -87,69 +108,66 @@ def _check_imports(code: str) -> str | None:
     return None
 
 
-class _Sandbox:
-    _instance = None
+def _execute_code(code: str, output_dir: str = None) -> str:
+    import_error = _check_imports(code)
+    if import_error:
+        return f"Error: {import_error}"
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._init_globals()
-        return cls._instance
+    import matplotlib
 
-    def _init_globals(self):
-        self.globals = {'__builtins__': __builtins__}
-        try:
-            import numpy as np
-            import pandas as pd
-            self.globals.update({'np': np, 'pd': pd})
-        except ImportError:
-            pass
-        try:
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            self.globals.update({'plt': plt})
-        except ImportError:
-            pass
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
-    def execute(self, code: str) -> str:
-        import_error = _check_imports(code)
-        if import_error:
-            return f"Error: {import_error}"
-
-        stdout, stderr = io.StringIO(), io.StringIO()
-        try:
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                exec(code, self.globals)
-            out = stdout.getvalue()
-            err = stderr.getvalue()
-            return f"{out}\n{err}".strip() if err else (out or "Executed (no output)")
-        except Exception as e:
-            return f"Error: {type(e).__name__}: {e}"
+    globals_dict = {"__builtins__": __builtins__, "np": np, "pd": pd, "plt": plt, "OUTPUT_DIR": output_dir}
+    stdout, stderr = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exec(code, globals_dict)
+        out = stdout.getvalue()
+        err = stderr.getvalue()
+        return f"{out}\n{err}".strip() if err else (out or "Executed (no output)")
+    except Exception as e:
+        return f"Error: {type(e).__name__}: {e}"
 
 
-@tool
-def execute_python(code: str) -> str:
-    """Execute Python code with numpy, pandas, matplotlib pre-imported.
-
-    Args:
-        code: Python code to execute. Use print() to see results.
-              Available: np (numpy), pd (pandas), plt (matplotlib.pyplot)
-
-    Returns:
-        Printed output from code execution, or error message if failed.
-    """
+def _execute_python_impl(code: str, output_dir: str = None) -> str:
     try:
         validate.non_empty(code, "code")
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
-    if _code_approval:
-        response = _code_approval.request_code_approval(code)
-        if not response.approved:
-            return "Code execution rejected by user"
+    result = _execute_code(code, output_dir)
+    if not result.startswith("Error"):
+        result += _GLUE_REMINDER
+    return result
 
-    return _Sandbox().execute(code)
+
+def _write_csv_impl(filename: str, csv_content: str, output_dir: str) -> str:
+    try:
+        validate.non_empty(filename, "filename")
+        validate.non_empty(csv_content, "csv_content")
+        validate.extension(filename, [".csv"])
+        if not output_dir:
+            return "Error: Output directory not set"
+        file_path = os.path.join(output_dir, os.path.basename(filename))
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(csv_content)
+        return f"Saved CSV to {file_path}"
+    except ValueError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error: Failed to write CSV: {e}"
+
+
+def _list_output_files_impl(output_dir: str) -> str:
+    if not output_dir:
+        return "Error: Output directory not set"
+    if not os.path.isdir(output_dir):
+        return f"Error: Output directory not found: {output_dir}"
+    files = sorted(os.listdir(output_dir))
+    if not files:
+        return f"Output directory {output_dir} is empty."
+    return "\n".join(os.path.join(output_dir, name) for name in files)
 
 
 @tool
@@ -166,63 +184,67 @@ def inspect_datafile(file_path: str) -> str:
         validate.file_exists(file_path)
         validate.extension(file_path, [".csv", ".h5", ".hdf5"])
     except ValueError as e:
-        return str(e)
+        return f"Error: {e}"
 
     try:
-        import pandas as pd
-        if file_path.endswith('.csv'):
+        if file_path.endswith(".csv"):
             df = pd.read_csv(file_path)
         else:
             df = pd.read_hdf(file_path)
         stats = df.describe().to_string()
         return f"Columns: {list(df.columns)}\nRows: {len(df)}\n\n{stats}"
     except Exception as e:
-        return f"Failed to inspect file: {e}"
+        return f"Error: Failed to inspect file: {e}"
 
 
-@tool
-def write_csv_file(filename: str, csv_content: str) -> str:
-    """Write CSV content to a file in the current output directory.
-
-    Args:
-        filename: CSV filename to create
-        csv_content: Full CSV text including header row
-
-    Returns:
-        Saved file path, or error message if failed.
-    """
-    try:
-        validate.non_empty(filename, "filename")
-        validate.non_empty(csv_content, "csv_content")
-        validate.extension(filename, [".csv"])
-        if not _output_dir:
-            return "Error: Output directory not set"
-        file_path = os.path.join(_output_dir, os.path.basename(filename))
-        with open(file_path, "w") as f:
-            f.write(csv_content)
-        return f"Saved CSV to {file_path}"
-    except ValueError as e:
-        return str(e)
-    except Exception as e:
-        return f"Failed to write CSV: {e}"
+def _format_tool_summary(tools) -> str:
+    lines = []
+    for t in tools or []:
+        name = getattr(t, "name", None)
+        if not name or name in _SUMMARY_SKIP:
+            continue
+        desc = (getattr(t, "description", "") or "").strip().splitlines()
+        first = desc[0].strip() if desc else ""
+        lines.append(f"- {name}: {first}" if first else f"- {name}")
+    return "\n".join(lines) if lines else "- (no other tools available - use minimal code)"
 
 
-@tool
-def list_output_files() -> str:
-    """List files in the current output directory.
+def _make_execute_python(output_dir, visible_tools):
+    @tool
+    def execute_python(code: str) -> str:
+        """Run a small Python glue snippet. Prefer existing tools; see full description."""
+        return _execute_python_impl(code, output_dir)
 
-    Returns:
-        List of files in the output directory, or error if unavailable.
-    """
-    if not _output_dir:
-        return "Error: Output directory not set"
-    if not os.path.isdir(_output_dir):
-        return f"Error: Output directory not found: {_output_dir}"
-    files = sorted(os.listdir(_output_dir))
-    if not files:
-        return f"Output directory {_output_dir} is empty."
-    return "\n".join(os.path.join(_output_dir, name) for name in files)
+    execute_python.description = _EXECUTE_PYTHON_DOC.format(
+        imports=", ".join(sorted(SANDBOX_ALLOWED_IMPORTS)),
+        tool_summary=_format_tool_summary(visible_tools),
+    )
+    return execute_python
 
 
-def get_compute_tools():
-    return [inspect_datafile, write_csv_file, list_output_files, cite, read_text_file]
+def get_compute_tools(output_dir, available_tools=None):
+    @tool
+    def write_csv_file(filename: str, csv_content: str) -> str:
+        """Write CSV content to a file in the current output directory.
+
+        Args:
+            filename: CSV filename to create
+            csv_content: Full CSV text including header row
+
+        Returns:
+            Saved file path, or error message if failed.
+        """
+        return _write_csv_impl(filename, csv_content, output_dir)
+
+    @tool
+    def list_output_files() -> str:
+        """List files in the current output directory.
+
+        Returns:
+            List of files in the output directory, or error if unavailable.
+        """
+        return _list_output_files_impl(output_dir)
+
+    helpers = [inspect_datafile, write_csv_file, list_output_files, cite, read_text_file]
+    execute_python = _make_execute_python(output_dir, list(available_tools or []) + helpers)
+    return helpers + [execute_python]
