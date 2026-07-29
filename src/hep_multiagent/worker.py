@@ -54,7 +54,10 @@ def build_worker_prompt(
     previous_attempts: list[dict],
     research_context: str | None = None,
 ) -> str:
-    parts = [f"# Task\n{task}", f"# Output Directory\nSave files to: {output_dir}"]
+    parts = [
+        f"# Task\n{task}",
+        f"# Output Directory\nSave files to exactly this directory: {output_dir}\nIf a tool has an output_dir parameter, pass this exact path.",
+    ]
     if research_context:
         parts.append(f"# Research Context (already gathered - use directly)\n{research_context}")
     if artifacts:

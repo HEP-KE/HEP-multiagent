@@ -10,7 +10,7 @@ def test_worker_prompt_includes_context_needed_for_retry():
         [{"output": "", "error": "connection failed", "tool_calls": ["fetch_data"]}],
     )
 
-    assert "Save files to: /out" in prompt
+    assert "Save files to exactly this directory: /out" in prompt
     assert "file1.csv" in prompt
     assert "prior context" in prompt
     assert "connection failed" in prompt

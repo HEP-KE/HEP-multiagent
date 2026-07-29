@@ -199,7 +199,7 @@ def _handle_completion_tool(name: str, args: dict, tools: list) -> tuple[bool, s
         return True, result, raw_result
 
     if isinstance(raw_result, dict):
-        return False, raw_result.get("error", json.dumps(raw_result)), None
+        return False, f"Error: {raw_result.get('error', json.dumps(raw_result))}", None
     return False, normalize_tool_result(raw_result), None
 
 
@@ -236,7 +236,7 @@ def _update_steps(
                 "status": status,
                 "output": output,
                 "solution": solution,
-                "artifacts": artifacts,
+                "artifacts": list(dict.fromkeys(artifacts)),
                 "error": error if status == "failed" else None,
                 "attempts": attempts,
                 "final_answer_produced": final_answer_produced,
