@@ -19,7 +19,7 @@ from hep_multiagent.features.report_generator import LaTeXReport
 from hep_multiagent.features.session_resume import SQLiteCheckpoint
 from hep_multiagent.graph import build_graph
 from hep_multiagent.nodes import planner
-from hep_multiagent.nodes.planner import extract_json, validate_plan_data
+from hep_multiagent.nodes.planner import PlanOutput, validate_plan_data
 from hep_multiagent.nodes.router import route
 from hep_multiagent.nodes.supervisor import route_action, supervise
 from hep_multiagent.workers.compute import get_compute_tools
@@ -51,24 +51,15 @@ class MockLLM:
         self.bound_tools = tools
         return self
 
+    def with_structured_output(self, schema):
+        return MockStructuredLLM(schema)
+
     def _make_response(self, messages):
         self.call_count += 1
         content = str(messages[-1].content) if messages else ""
         system_content = str(messages[0].content) if messages else ""
 
-        if "planning agent" in system_content.lower() or "output only valid json" in content.lower():
-            return AIMessage(content='''```json
-{
-    "goal": "Test query execution",
-    "steps": [
-        {"id": "s1", "name": "search_papers", "worker_type": "research",
-         "description": "Search for papers on the topic", "depends_on": []},
-        {"id": "s2", "name": "analyze_results", "worker_type": "compute",
-         "description": "Analyze the search results", "depends_on": ["s1"]}
-    ]
-}
-```''')
-        elif "data acquisition" in system_content.lower() or "what data sources" in content.lower():
+        if "data acquisition" in system_content.lower() or "what data sources" in content.lower():
             return AIMessage(content="Available data sources: arxiv papers, simulation data.")
         elif "research" in content.lower() or "search" in content.lower():
             return AIMessage(content="Found 3 relevant papers on dark matter detection.")
@@ -82,6 +73,32 @@ class MockLLM:
 
     def invoke(self, messages):
         return self._make_response(messages)
+
+
+class MockStructuredLLM:
+    def __init__(self, schema):
+        self.schema = schema
+
+    async def ainvoke(self, messages):
+        return self.schema(
+            goal="Test query execution",
+            steps=[
+                {
+                    "id": "s1",
+                    "name": "search_papers",
+                    "worker_type": "research",
+                    "description": "Search for papers on the topic",
+                    "depends_on": [],
+                },
+                {
+                    "id": "s2",
+                    "name": "analyze_results",
+                    "worker_type": "compute",
+                    "description": "Analyze the search results",
+                    "depends_on": ["s1"],
+                },
+            ],
+        )
 
 
 @pytest.fixture
@@ -129,13 +146,21 @@ def test_agent_resume_requires_existing_checkpoint(temp_output_dir):
 
 def test_planner_consultations_can_be_disabled(monkeypatch):
     class PlanOnlyLLM:
+        def with_structured_output(self, schema):
+            self.schema = schema
+            return self
+
         async def ainvoke(self, messages):
-            return AIMessage(content='''{
-                "goal": "answer research query",
-                "steps": [
-                    {"id": "s1", "name": "search", "worker_type": "research", "description": "search papers", "depends_on": []}
-                ]
-            }''')
+            return self.schema(
+                goal="answer research query",
+                steps=[{
+                    "id": "s1",
+                    "name": "search",
+                    "worker_type": "research",
+                    "description": "search papers",
+                    "depends_on": [],
+                }],
+            )
 
     async def fail_consult(*args, **kwargs):
         raise AssertionError("consultant should not be called")
@@ -282,21 +307,39 @@ def test_execute_python_allows_safe_imports():
     assert "3.14" in result
 
 
-def test_planner_extract_json():
-    text = '''Here is the plan:
-```json
-{"goal": "test", "steps": []}
-```
-Done.'''
-    result = extract_json(text)
-    assert result is not None
-    assert "goal" in result
+def test_planner_uses_structured_output(temp_output_dir):
+    class StructuredOnlyLLM:
+        schema = None
 
-    text = 'The plan is {"goal": "test", "steps": []}'
-    result = extract_json(text)
-    assert result is not None
+        def with_structured_output(self, schema):
+            self.schema = schema
+            return self
 
-    assert extract_json("no json here") is None
+        async def ainvoke(self, messages):
+            return self.schema(
+                goal="answer research query",
+                steps=[{
+                    "id": "s1",
+                    "name": "search",
+                    "worker_type": "research",
+                    "description": "search papers",
+                    "depends_on": [],
+                }],
+            )
+
+    llm = StructuredOnlyLLM()
+    state = {"messages": [HumanMessage(content="Find papers")], "output_dir": temp_output_dir}
+    result = asyncio.run(planner.plan(
+        state,
+        llm,
+        tools=[],
+        worker_docs="- research: Search arxiv and cite papers",
+        planner_consultations=False,
+        worker_types=("research",),
+    ))
+
+    assert llm.schema is PlanOutput
+    assert result["plan"]["steps"][0]["worker_type"] == "research"
 
 
 def test_planner_rejects_invalid_plan_shape():

@@ -59,7 +59,7 @@ def build_graph(
     notebook: Any = None,
     issue_tracking: bool = True,
     structured_worker_output: bool = True,
-    planner_consultations: bool = True,
+    planner_consultations: bool = False,
     recorder: Any = None,
     tool_sources: dict | None = None,
 ):
@@ -121,7 +121,7 @@ def build_graph(
 
     async def synthesis_node(state: AgentState):
         if logger:
-            plan = state.get("plan", {})
+            plan = state.get("plan") or {}
             steps = plan.get("steps", [])
             completed = [step["name"] for step in steps if step["status"] == "completed"]
             failed = [step["name"] for step in steps if step["status"] == "failed"]

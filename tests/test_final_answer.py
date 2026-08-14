@@ -50,3 +50,14 @@ def test_structured_final_answer_validates_lists():
         "limitations": [],
     })
     assert "error" in result
+
+
+def test_structured_final_answer_rejects_non_path_artifacts():
+    result = structured_final_answer.invoke({
+        "status": "success",
+        "summary": "Task completed",
+        "artifacts": [{"identifier": "demo_doc"}],
+        "observations": [],
+        "limitations": [],
+    })
+    assert "error" in result

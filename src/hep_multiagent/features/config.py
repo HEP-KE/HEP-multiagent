@@ -9,4 +9,4 @@ class AgentFeatures:
     replay_notebook: bool = True
     issue_tracking: bool = True
     structured_worker_output: bool = True
-    planner_consultations: bool = True
+    planner_consultations: bool = False

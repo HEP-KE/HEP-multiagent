@@ -57,6 +57,8 @@ def structured_final_answer(
         validate.non_empty(summary, "summary")
         if not isinstance(artifacts, list):
             raise ValueError("artifacts must be a list")
+        if not all(isinstance(path, str) for path in artifacts):
+            raise ValueError("artifacts must be a list of file paths")
         if not isinstance(observations, list):
             raise ValueError("observations must be a list")
         if not isinstance(limitations, list):

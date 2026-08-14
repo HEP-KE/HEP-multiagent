@@ -1,10 +1,10 @@
-import json
 import os
 import re
 import uuid
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from ..state import AgentState, Plan
 from ..config import CONSULTANTS
@@ -30,22 +30,23 @@ Create research steps only when the final answer needs cited papers.
 
 ## Output Format
 
-```json
-{{
-    "goal": "summary including the specific criteria you determined from consultation",
-    "steps": [
-        {{
-            "id": "s1",
-            "name": "step_name",
-            "worker_type": "{worker_type_options}",
-            "description": "Detailed instructions with SPECIFIC values from consultation",
-            "depends_on": []
-        }}
-    ]
-}}
-```
+Return a structured plan only. Do not call tools, answer the user query, or
+write tool-call text. Use worker_type values from: {worker_type_options}.
 
 """
+
+
+class PlanStepOutput(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    worker_type: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    depends_on: list[str] = Field(default_factory=list)
+
+
+class PlanOutput(BaseModel):
+    goal: str = Field(min_length=1)
+    steps: list[PlanStepOutput] = Field(min_length=1)
 
 VAGUE_TERMS = [
     "interesting", "unusual", "significant", "important", "relevant",
@@ -80,27 +81,6 @@ def _is_research_only_query(query: str) -> bool:
     has_research = any(t in q for t in research_terms)
     has_data = any(t in q for t in data_terms)
     return has_research and not has_data
-
-
-def extract_json(text: str) -> str | None:
-    if "```json" in text:
-        start = text.find("```json") + 7
-        end = text.find("```", start)
-        if end > start:
-            return text[start:end].strip()
-    if "```" in text:
-        start = text.find("```") + 3
-        end = text.find("```", start)
-        if end > start and text[start:end].strip().startswith("{"):
-            return text[start:end].strip()
-    start = text.find("{")
-    if start == -1:
-        return None
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text[start:])
-        return json.dumps(obj)
-    except json.JSONDecodeError:
-        return None
 
 
 def validate_plan_data(plan_data: Any, worker_types: tuple[str, ...]) -> None:
@@ -140,7 +120,7 @@ async def plan(
     tools: list,
     worker_docs: str,
     logger=None,
-    planner_consultations: bool = True,
+    planner_consultations: bool = False,
     worker_types: tuple[str, ...] = ("data", "compute", "research", "viz"),
 ) -> dict:
     tool_docs_str = "\n".join(f"- {t.name}: {t.description}" for t in tools)
@@ -254,18 +234,14 @@ The consultation above found criteria for your query.
     if logger:
         logger.log("Planner", "Generating plan from LLM...")
     messages = [SystemMessage(content=prompt), HumanMessage(content=query)]
-    response = await llm.ainvoke(messages)
-    if logger and response.content:
-        logger.log("Planner", f"LLM response:\n{response.content}")
-
-    json_str = extract_json(response.content)
-    if not json_str:
-        return {"plan": None, "error": "No JSON found in planner response"}
-
     try:
-        plan_data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        return {"plan": None, "error": f"JSON parse error: {e}"}
+        plan_output = await llm.with_structured_output(PlanOutput).ainvoke(messages)
+    except Exception as e:
+        return {"plan": None, "error": f"Planner structured output failed: {type(e).__name__}: {e}"}
+
+    plan_data = plan_output.model_dump()
+    if logger:
+        logger.log("Planner", f"Structured plan:\n{plan_output.model_dump_json(indent=2)}")
 
     try:
         validate_plan_data(plan_data, worker_types)

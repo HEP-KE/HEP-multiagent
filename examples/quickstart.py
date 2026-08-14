@@ -8,8 +8,8 @@ from hep_multiagent import Agent
 
 async def main():
     llm = ChatOpenAI(
-        model=os.environ.get("ARGO_MODEL", "GPT-5.5"),
-        base_url=os.environ.get("ARGO_BASE_URL", "https://apps-dev.inside.anl.gov/argoapi/v1"),
+        model="GPT-5.5",
+        base_url="https://apps-dev.inside.anl.gov/argoapi/v1",
         api_key=os.environ["ARGO_USER"],
     )
 

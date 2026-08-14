@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from helpers import live_mcp_tests_enabled, run_live_server_test
@@ -11,9 +9,9 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_kb_mcp_multiagent_run():
+def test_kb_mcp_multiagent_run(tmp_path):
     run_live_server_test(
-        base_dir=Path(__file__).parent,
+        base_dir=tmp_path,
         server_name="kb-mcp",
         url_env="KB_MCP_SERVER_URL",
         default_url=None,
